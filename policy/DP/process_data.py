@@ -108,6 +108,8 @@ def main():
         total_count += left_gripper_all.shape[0] - 1
         episode_ends_arrays.append(total_count)
 
+
+
     print()
     episode_ends_arrays = np.array(episode_ends_arrays)
     # action_arrays = np.array(action_arrays)
