@@ -130,6 +130,7 @@ def main(args):
     stats_path = os.path.join(ckpt_dir, f"dataset_stats.pkl")
     with open(stats_path, "wb") as f:
         pickle.dump(stats, f)
+    # trainbc()在下面
     best_ckpt_info = train_bc(train_dataloader, val_dataloader, config)
     best_epoch, min_val_loss, best_state_dict = best_ckpt_info
 
@@ -358,6 +359,8 @@ def forward_pass(data, policy):
 
 
 def train_bc(train_dataloader, val_dataloader, config):
+    # 感觉好像是直接把训练逻辑全写这了
+    
     num_epochs = config["num_epochs"]
     ckpt_dir = config["ckpt_dir"]
     seed = config["seed"]
@@ -368,6 +371,7 @@ def train_bc(train_dataloader, val_dataloader, config):
 
     policy = make_policy(policy_class, policy_config)
     policy.cuda()
+    #make_optimizer就是把policy中的optimizer拿出来
     optimizer = make_optimizer(policy_class, policy)
 
     train_history = []
@@ -460,6 +464,10 @@ def plot_history(train_history, validation_history, num_epochs, ckpt_dir, seed):
 
 
 if __name__ == "__main__":
+    # 参数配置
+    # action = store 是按所给类型保存其参数值，比如str；store_true是保存bool值，好像是包含该参数
+    # 就是True,否则为false
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--eval", action="store_true")
     parser.add_argument("--onscreen_render", action="store_true")
@@ -490,4 +498,6 @@ if __name__ == "__main__":
     )
     parser.add_argument("--temporal_agg", action="store_true")
 
+
+#训练逻辑
     main(vars(parser.parse_args()))

@@ -232,7 +232,7 @@ def run(TASK_ENV, args):
         command = f"cd description && bash gen_episode_instructions.sh {args['task_name']} {args['task_config']} {args['language_num']}"
         os.system(command)
 
-
+#其仿真数据收集逻辑在仿真环境的时间上是对齐的
 if __name__ == "__main__":
     from test_render import Sapien_TEST
     Sapien_TEST()

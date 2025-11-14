@@ -22,3 +22,6 @@ python3 imitate_episodes.py \
     --num_epochs 6000 \
     --lr 1e-5 \
     --seed ${seed}
+
+
+# eg.  bash train.sh beat_block_hammer demo_randomized 50 0 0
