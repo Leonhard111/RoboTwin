@@ -29,23 +29,33 @@ def get_model(usr_args):
     return DP(ckpt_file, n_obs_steps=n_obs_steps, n_action_steps=n_action_steps)
 
 
-def eval(TASK_ENV, model, observation):
+def eval(TASK_ENV, model, observation, record_actions=False):
     """
     TASK_ENV: Task Environment Class, you can use this class to interact with the environment
     model: The model from 'get_model()' function
     observation: The observation about the environment
+    record_actions: If True, return list of executed actions for data collection
     """
     obs = encode_obs(observation)
     instruction = TASK_ENV.get_instruction()
 
     # ======== Get Action ========
     actions = model.get_action(obs)
+    
+    executed_actions = [] if record_actions else None
 
     for action in actions:
+        if record_actions:
+            executed_actions.append(action.copy())
+        
         TASK_ENV.take_action(action)
         observation = TASK_ENV.get_obs()
         obs = encode_obs(observation)
         model.update_obs(obs)
+    
+    if record_actions:
+        return executed_actions
+    return None
 
 def reset_model(model):
     model.reset_obs()

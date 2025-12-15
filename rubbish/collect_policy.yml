@@ -1,0 +1,12 @@
+# Data collection configuration for policy rollouts
+policy_name: DP
+task_name: null
+task_config: null
+ckpt_setting: null
+seed: null
+instruction_type: unseen
+
+expert_data_num: null
+checkpoint_num: 150
+head_camera_type: D435
+num_frames: 100  # Total number of frames to collect
