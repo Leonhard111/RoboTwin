@@ -63,9 +63,11 @@ def get_embodiment_config(robot_file):
 
 def main(usr_args):
     current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
     task_name = usr_args["task_name"]
     task_config = usr_args["task_config"]
     ckpt_setting = usr_args["ckpt_setting"]
+
     # checkpoint_num = usr_args['checkpoint_num']
     policy_name = usr_args["policy_name"]
     instruction_type = usr_args["instruction_type"]
@@ -75,6 +77,7 @@ def main(usr_args):
 
     get_model = eval_function_decorator(policy_name, "get_model")
 
+    # with 不会创建新的作用域
     with open(f"./task_config/{task_config}.yml", "r", encoding="utf-8") as f:
         args = yaml.load(f.read(), Loader=yaml.FullLoader)
 
@@ -219,6 +222,7 @@ def eval_policy(task_name,
         render_freq = args["render_freq"]
         args["render_freq"] = 0
 
+        # 通过专家策略检验场景是否能完成任务
         if expert_check:
             try:
                 TASK_ENV.setup_demo(now_ep_num=now_id, seed=now_seed, is_test=True, **args)

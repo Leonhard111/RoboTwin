@@ -229,6 +229,8 @@ def build_encoder(args):
     return encoder
 
 
+
+# 这个就是ACT的真实模型架构
 def build(args):
     state_dim = 14  # TODO hardcode
 
@@ -242,6 +244,8 @@ def build(args):
     transformer = build_transformer(args)
 
     encoder = build_encoder(args)
+
+
 
     model = DETRVAE(
         backbones,

@@ -24,3 +24,6 @@ python3 imitate_episodes.py \
     --save_freq 2000 \
     --state_dim 14 \
     --seed ${seed}
+
+
+# eg.  bash train.sh beat_block_hammer demo_randomized 50 0 0

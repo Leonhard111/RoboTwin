@@ -25,6 +25,8 @@ class ACTPolicy(nn.Module):
 
     def __init__(self, args_override, RoboTwin_Config=None):
         super().__init__()
+
+        # 模型 = DETRVAE
         model, optimizer = build_ACT_model_and_optimizer(args_override, RoboTwin_Config)
         self.model = model  # CVAE decoder
         self.optimizer = optimizer
@@ -58,6 +60,8 @@ class ACTPolicy(nn.Module):
 
 class CNNMLPPolicy(nn.Module):
 
+
+# 策略网络
     def __init__(self, args_override):
         super().__init__()
         model, optimizer = build_CNNMLP_model_and_optimizer(args_override)
@@ -101,7 +105,7 @@ def kl_divergence(mu, logvar):
 
 
 class ACT:
-
+# 这个ACT没看懂在干嘛
     def __init__(self, args_override=None, RoboTwin_Config=None):
         if args_override is None:
             args_override = {

@@ -13,7 +13,7 @@ import threading
 class BaseWorkspace:
     include_keys = tuple()
     exclude_keys = tuple()
-
+# 用Omegaconf好像既能通过cfg.属性,也能通过cfg['属性']来索引，但是这全是配置，不是实例
     def __init__(self, cfg: OmegaConf, output_dir: Optional[str] = None):
         self.cfg = cfg
         self._output_dir = output_dir
