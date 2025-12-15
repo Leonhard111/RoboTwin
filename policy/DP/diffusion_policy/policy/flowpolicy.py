@@ -1,5 +1,5 @@
 import sys
-sys.path.append('lpb_copy/diffusion_policy')
+# sys.path.append('policy/DP/diffusion_policy')
 from typing import Dict
 import math
 import torch
@@ -321,4 +321,5 @@ class FlowPolicy(BaseImagePolicy):
         loss_dict = { 'bc_loss': 
                      loss.item(),}
         
-        return loss, loss_dict
+        # return loss, loss_dict
+        return loss
