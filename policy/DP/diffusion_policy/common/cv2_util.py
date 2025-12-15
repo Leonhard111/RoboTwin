@@ -3,7 +3,6 @@ import math
 import cv2
 import numpy as np
 
-
 def draw_reticle(img, u, v, label_color):
     """
     Draws a reticle (cross-hair) on the image at the given position on top of
@@ -28,16 +27,16 @@ def draw_reticle(img, u, v, label_color):
 
 
 def draw_text(
-        img,
-        *,
-        text,
-        uv_top_left,
-        color=(255, 255, 255),
-        fontScale=0.5,
-        thickness=1,
-        fontFace=cv2.FONT_HERSHEY_SIMPLEX,
-        outline_color=(0, 0, 0),
-        line_spacing=1.5,
+    img,
+    *,
+    text,
+    uv_top_left,
+    color=(255, 255, 255),
+    fontScale=0.5,
+    thickness=1,
+    fontFace=cv2.FONT_HERSHEY_SIMPLEX,
+    outline_color=(0, 0, 0),
+    line_spacing=1.5,
 ):
     """
     Draws multiline with an outline.
@@ -45,7 +44,7 @@ def draw_text(
     assert isinstance(text, str)
 
     uv_top_left = np.array(uv_top_left, dtype=float)
-    assert uv_top_left.shape == (2, )
+    assert uv_top_left.shape == (2,)
 
     for line in text.splitlines():
         (w, h), _ = cv2.getTextSize(
@@ -83,17 +82,16 @@ def draw_text(
 
 
 def get_image_transform(
-        input_res: Tuple[int, int] = (1280, 720),
-        output_res: Tuple[int, int] = (640, 480),
-        bgr_to_rgb: bool = False,
-):
+        input_res: Tuple[int,int]=(1280,720), 
+        output_res: Tuple[int,int]=(640,480), 
+        bgr_to_rgb: bool=False):
 
     iw, ih = input_res
     ow, oh = output_res
     rw, rh = None, None
     interp_method = cv2.INTER_AREA
 
-    if (iw / ih) >= (ow / oh):
+    if (iw/ih) >= (ow/oh):
         # input is wider
         rh = oh
         rw = math.ceil(rh / ih * iw)
@@ -104,7 +102,7 @@ def get_image_transform(
         rh = math.ceil(rw / iw * ih)
         if ow > iw:
             interp_method = cv2.INTER_LINEAR
-
+    
     w_slice_start = (rw - ow) // 2
     w_slice = slice(w_slice_start, w_slice_start + ow)
     h_slice_start = (rh - oh) // 2
@@ -114,21 +112,23 @@ def get_image_transform(
         c_slice = slice(None, None, -1)
 
     def transform(img: np.ndarray):
-        assert img.shape == ((ih, iw, 3))
+        assert img.shape == ((ih,iw,3))
         # resize
         img = cv2.resize(img, (rw, rh), interpolation=interp_method)
         # crop
         img = img[h_slice, w_slice, c_slice]
         return img
-
     return transform
 
-
-def optimal_row_cols(n_cameras, in_wh_ratio, max_resolution=(1920, 1080)):
+def optimal_row_cols(
+        n_cameras,
+        in_wh_ratio,
+        max_resolution=(1920, 1080)
+    ):
     out_w, out_h = max_resolution
     out_wh_ratio = out_w / out_h
-
-    n_rows = np.arange(n_cameras, dtype=np.int64) + 1
+    
+    n_rows = np.arange(n_cameras,dtype=np.int64) + 1
     n_cols = np.ceil(n_cameras / n_rows).astype(np.int64)
     cat_wh_ratio = in_wh_ratio * (n_cols / n_rows)
     ratio_diff = np.abs(out_wh_ratio - cat_wh_ratio)
@@ -145,6 +145,44 @@ def optimal_row_cols(n_cameras, in_wh_ratio, max_resolution=(1920, 1080)):
     else:
         rh = math.floor(out_h / best_n_row)
         rw = math.floor(rh * in_wh_ratio)
-
+    
     # crop_resolution = (rw, rh)
     return rw, rh, best_n_col, best_n_row
+
+
+def save_images_to_video(image_list, video_filename, fps=30):
+    if len(image_list) == 0:
+        print("No images to save in the video.")
+        return
+
+    # Get the height, width, and number of channels from the first image
+    height, width, channels = image_list[0].shape
+    print(f"Video resolution: {width}x{height}, Channels: {channels}")
+
+    # Use H264 codec for .mp4 files
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    video_writer = cv2.VideoWriter(video_filename, fourcc, fps, (width, height))
+
+    # Check if the video writer opened correctly
+    if not video_writer.isOpened():
+        print("Error: Could not open the video file for writing.")
+        return
+
+    # Loop through the list of images and ensure they are all consistent
+    for idx, img in enumerate(image_list):
+        # Ensure all images have the same dimensions
+        if img.shape[:2] != (height, width):
+            print(f"Error: Image at index {idx} has inconsistent dimensions.")
+            return
+
+        # Check image type and convert if necessary
+        if img.dtype != np.uint8:
+            print(f"Warning: Image at index {idx} is not uint8. Converting.")
+            img = img.astype(np.uint8)
+        
+        video_writer.write(img)
+
+    # Release the VideoWriter object
+    video_writer.release()
+    print(f"Video saved as {video_filename}")
+

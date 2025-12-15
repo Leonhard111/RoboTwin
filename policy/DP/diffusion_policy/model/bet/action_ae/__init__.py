@@ -9,7 +9,6 @@ import diffusion_policy.model.bet.utils as utils
 
 
 class AbstractActionAE(utils.SaveModule, abc.ABC):
-
     @abc.abstractmethod
     def fit_model(
         self,

@@ -1,5 +1,5 @@
 import os
-
+import random
 from collections import OrderedDict
 from typing import List, Optional
 
@@ -27,7 +27,6 @@ def mlp(input_dim, hidden_dim, output_dim, hidden_depth, output_mod=None):
 
 
 class eval_mode:
-
     def __init__(self, *models, no_grad=False):
         self.models = models
         self.no_grad = no_grad
@@ -74,7 +73,6 @@ def transpose_batch_timestep(*args):
 
 
 class TrainWithLogger:
-
     def reset_log(self):
         self.log_components = OrderedDict()
 
@@ -98,8 +96,10 @@ class TrainWithLogger:
             log_key, name_key = key.split("/")
             iterator_log_name = f"{log_key[0]}{name_key[0]}".upper()
             iterator_log_component[iterator_log_name] = to_log
-        postfix = ",".join("{}:{:.2e}".format(key, iterator_log_component[key])
-                           for key in iterator_log_component.keys())
+        postfix = ",".join(
+            "{}:{:.2e}".format(key, iterator_log_component[key])
+            for key in iterator_log_component.keys()
+        )
         if iterator is not None:
             iterator.set_postfix_str(postfix)
         wandb.log(log_components, step=epoch)
@@ -107,7 +107,6 @@ class TrainWithLogger:
 
 
 class SaveModule(nn.Module):
-
     def set_snapshot_path(self, path):
         self.snapshot_path = path
         print(f"Setting snapshot path to {self.snapshot_path}")
@@ -126,5 +125,7 @@ def split_datasets(dataset, train_fraction=0.95, random_seed=42):
         int(train_fraction * dataset_length),
         dataset_length - int(train_fraction * dataset_length),
     ]
-    train_set, val_set = random_split(dataset, lengths, generator=torch.Generator().manual_seed(random_seed))
+    train_set, val_set = random_split(
+        dataset, lengths, generator=torch.Generator().manual_seed(random_seed)
+    )
     return train_set, val_set

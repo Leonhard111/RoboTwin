@@ -34,7 +34,9 @@ class AbstractLatentGenerator(abc.ABC, utils.SaveModule):
         pass
 
     @abc.abstractmethod
-    def generate_latents(self, seq_obses: torch.Tensor, seq_masks: torch.Tensor) -> torch.Tensor:
+    def generate_latents(
+        self, seq_obses: torch.Tensor, seq_masks: torch.Tensor
+    ) -> torch.Tensor:
         """
         Given a batch of sequences of observations, generate a batch of sequences of latents.
 
@@ -47,16 +49,18 @@ class AbstractLatentGenerator(abc.ABC, utils.SaveModule):
         """
         pass
 
-    def get_optimizer(self, weight_decay: float, learning_rate: float, betas: Tuple[float,
-                                                                                    float]) -> torch.optim.Optimizer:
+    def get_optimizer(
+        self, weight_decay: float, learning_rate: float, betas: Tuple[float, float]
+    ) -> torch.optim.Optimizer:
         """
         Default optimizer class. Override this if you want to use a different optimizer.
         """
-        return torch.optim.Adam(self.parameters(), lr=learning_rate, weight_decay=weight_decay, betas=betas)
+        return torch.optim.Adam(
+            self.parameters(), lr=learning_rate, weight_decay=weight_decay, betas=betas
+        )
 
 
 class LatentGeneratorDataParallel(torch.nn.DataParallel):
-
     def get_latent_and_loss(self, *args, **kwargs):
         return self.module.get_latent_and_loss(*args, **kwargs)  # type: ignore
 

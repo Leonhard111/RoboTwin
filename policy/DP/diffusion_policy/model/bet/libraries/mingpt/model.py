@@ -65,8 +65,9 @@ class CausalSelfAttention(nn.Module):
         # causal mask to ensure that attention is only applied to the left in the input sequence
         self.register_buffer(
             "mask",
-            torch.tril(torch.ones(config.block_size, config.block_size)).view(1, 1, config.block_size,
-                                                                              config.block_size),
+            torch.tril(torch.ones(config.block_size, config.block_size)).view(
+                1, 1, config.block_size, config.block_size
+            ),
         )
         self.n_head = config.n_head
 
@@ -78,9 +79,15 @@ class CausalSelfAttention(nn.Module):
         ) = x.size()  # batch size, sequence length, embedding dimensionality (n_embd)
 
         # calculate query, key, values for all heads in batch and move head forward to be the batch dim
-        k = (self.key(x).view(B, T, self.n_head, C // self.n_head).transpose(1, 2))  # (B, nh, T, hs)
-        q = (self.query(x).view(B, T, self.n_head, C // self.n_head).transpose(1, 2))  # (B, nh, T, hs)
-        v = (self.value(x).view(B, T, self.n_head, C // self.n_head).transpose(1, 2))  # (B, nh, T, hs)
+        k = (
+            self.key(x).view(B, T, self.n_head, C // self.n_head).transpose(1, 2)
+        )  # (B, nh, T, hs)
+        q = (
+            self.query(x).view(B, T, self.n_head, C // self.n_head).transpose(1, 2)
+        )  # (B, nh, T, hs)
+        v = (
+            self.value(x).view(B, T, self.n_head, C // self.n_head).transpose(1, 2)
+        )  # (B, nh, T, hs)
 
         # causal self-attention; Self-attend: (B, nh, T, hs) x (B, nh, hs, T) -> (B, nh, T, T)
         att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
@@ -88,7 +95,9 @@ class CausalSelfAttention(nn.Module):
         att = F.softmax(att, dim=-1)
         att = self.attn_drop(att)
         y = att @ v  # (B, nh, T, T) x (B, nh, T, hs) -> (B, nh, T, hs)
-        y = (y.transpose(1, 2).contiguous().view(B, T, C))  # re-assemble all head outputs side by side
+        y = (
+            y.transpose(1, 2).contiguous().view(B, T, C)
+        )  # re-assemble all head outputs side by side
 
         # output projection
         y = self.resid_drop(self.proj(y))
@@ -139,7 +148,9 @@ class GPT(nn.Module):
         self.block_size = config.block_size
         self.apply(self._init_weights)
 
-        logger.info("number of parameters: %e", sum(p.numel() for p in self.parameters()))
+        logger.info(
+            "number of parameters: %e", sum(p.numel() for p in self.parameters())
+        )
 
     def get_block_size(self):
         return self.block_size
@@ -166,7 +177,7 @@ class GPT(nn.Module):
         # separate out all parameters to those that will and won't experience regularizing weight decay
         decay = set()
         no_decay = set()
-        whitelist_weight_modules = (torch.nn.Linear, )
+        whitelist_weight_modules = (torch.nn.Linear,)
         blacklist_weight_modules = (torch.nn.LayerNorm, torch.nn.Embedding)
         for mn, m in self.named_modules():
             for pn, p in m.named_parameters():
@@ -189,10 +200,14 @@ class GPT(nn.Module):
         param_dict = {pn: p for pn, p in self.named_parameters()}
         inter_params = decay & no_decay
         union_params = decay | no_decay
-        assert (len(inter_params) == 0), "parameters %s made it into both decay/no_decay sets!" % (str(inter_params), )
-        assert (len(param_dict.keys() -
-                    union_params) == 0), "parameters %s were not separated into either decay/no_decay set!" % (
-                        str(param_dict.keys() - union_params), )
+        assert (
+            len(inter_params) == 0
+        ), "parameters %s made it into both decay/no_decay sets!" % (str(inter_params),)
+        assert (
+            len(param_dict.keys() - union_params) == 0
+        ), "parameters %s were not separated into either decay/no_decay set!" % (
+            str(param_dict.keys() - union_params),
+        )
 
         # create the pytorch optimizer object
         optim_groups = [
@@ -205,7 +220,9 @@ class GPT(nn.Module):
                 "weight_decay": 0.0,
             },
         ]
-        optimizer = torch.optim.AdamW(optim_groups, lr=train_config.learning_rate, betas=train_config.betas)
+        optimizer = torch.optim.AdamW(
+            optim_groups, lr=train_config.learning_rate, betas=train_config.betas
+        )
         return optimizer
 
     def forward(self, idx, targets=None):
@@ -217,7 +234,9 @@ class GPT(nn.Module):
 
         # forward the GPT model
         token_embeddings = self.tok_emb(idx)  # each index maps to a (learnable) vector
-        position_embeddings = self.pos_emb[:, :t, :]  # each position maps to a (learnable) vector
+        position_embeddings = self.pos_emb[
+            :, :t, :
+        ]  # each position maps to a (learnable) vector
         x = self.drop(token_embeddings + position_embeddings)
         x = self.blocks(x)
         x = self.ln_f(x)

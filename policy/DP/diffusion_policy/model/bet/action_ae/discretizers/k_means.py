@@ -24,16 +24,19 @@ class KMeansDiscretizer(DictOfTensorMixin):
         self.predict_offsets = predict_offsets
 
     def fit_discretizer(self, input_actions: torch.Tensor) -> None:
-        assert (self.action_dim == input_actions.shape[-1]
-                ), f"Input action dimension {self.action_dim} does not match fitted model {input_actions.shape[-1]}"
+        assert (
+            self.action_dim == input_actions.shape[-1]
+        ), f"Input action dimension {self.action_dim} does not match fitted model {input_actions.shape[-1]}"
 
         flattened_actions = input_actions.view(-1, self.action_dim)
-        cluster_centers = KMeansDiscretizer._kmeans(flattened_actions, ncluster=self.n_bins)
-        self.params_dict["bin_centers"] = cluster_centers
+        cluster_centers = KMeansDiscretizer._kmeans(
+            flattened_actions, ncluster=self.n_bins
+        )
+        self.params_dict['bin_centers'] = cluster_centers
 
     @property
     def suggested_actions(self) -> torch.Tensor:
-        return self.params_dict["bin_centers"]
+        return self.params_dict['bin_centers']
 
     @classmethod
     def _kmeans(cls, x: torch.Tensor, ncluster: int = 512, niter: int = 50):
@@ -48,18 +51,23 @@ class KMeansDiscretizer(DictOfTensorMixin):
         pbar.set_description("K-means clustering")
         for i in pbar:
             # assign all pixels to the closest codebook element
-            a = ((x[:, None, :] - c[None, :, :])**2).sum(-1).argmin(1)
+            a = ((x[:, None, :] - c[None, :, :]) ** 2).sum(-1).argmin(1)
             # move each codebook element to be the mean of the pixels that assigned to it
             c = torch.stack([x[a == k].mean(0) for k in range(ncluster)])
             # re-assign any poorly positioned codebook elements
             nanix = torch.any(torch.isnan(c), dim=1)
             ndead = nanix.sum().item()
             if ndead:
-                tqdm.tqdm.write("done step %d/%d, re-initialized %d dead clusters" % (i + 1, niter, ndead))
+                tqdm.tqdm.write(
+                    "done step %d/%d, re-initialized %d dead clusters"
+                    % (i + 1, niter, ndead)
+                )
             c[nanix] = x[torch.randperm(N)[:ndead]]  # re-init dead clusters
         return c
 
-    def encode_into_latent(self, input_action: torch.Tensor, input_rep: Optional[torch.Tensor] = None) -> torch.Tensor:
+    def encode_into_latent(
+        self, input_action: torch.Tensor, input_rep: Optional[torch.Tensor] = None
+    ) -> torch.Tensor:
         """
         Given the input action, discretize it using the k-Means clustering algorithm.
 
@@ -71,7 +79,9 @@ class KMeansDiscretizer(DictOfTensorMixin):
         discretized_action (shape: ... x num_tokens): The discretized action.
         If self.predict_offsets is True, then the offsets are also returned.
         """
-        assert (input_action.shape[-1] == self.action_dim), "Input action dimension does not match fitted model"
+        assert (
+            input_action.shape[-1] == self.action_dim
+        ), "Input action dimension does not match fitted model"
 
         # flatten the input action
         flattened_actions = input_action.view(-1, self.action_dim)
@@ -79,13 +89,13 @@ class KMeansDiscretizer(DictOfTensorMixin):
         # get the closest cluster center
         closest_cluster_center = torch.argmin(
             torch.sum(
-                (flattened_actions[:, None, :] - self.params_dict["bin_centers"][None, :, :])**2,
+                (flattened_actions[:, None, :] - self.params_dict['bin_centers'][None, :, :]) ** 2,
                 dim=2,
             ),
             dim=1,
         )
         # Reshape to the original shape
-        discretized_action = closest_cluster_center.view(input_action.shape[:-1] + (1, ))
+        discretized_action = closest_cluster_center.view(input_action.shape[:-1] + (1,))
 
         if self.predict_offsets:
             # decode from latent and get the difference
@@ -116,9 +126,11 @@ class KMeansDiscretizer(DictOfTensorMixin):
         if type(latent_action_batch) == tuple:
             latent_action_batch, offsets = latent_action_batch
         # get the closest cluster center
-        closest_cluster_center = self.params_dict["bin_centers"][latent_action_batch]
+        closest_cluster_center = self.params_dict['bin_centers'][latent_action_batch]
         # Reshape to the original shape
-        reconstructed_action = closest_cluster_center.view(latent_action_batch.shape[:-1] + (self.action_dim, ))
+        reconstructed_action = closest_cluster_center.view(
+            latent_action_batch.shape[:-1] + (self.action_dim,)
+        )
         if offsets is not None:
             reconstructed_action += offsets
         return reconstructed_action

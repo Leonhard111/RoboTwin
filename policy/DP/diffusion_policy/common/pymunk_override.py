@@ -20,12 +20,13 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 # ----------------------------------------------------------------------------
-"""This submodule contains helper functions to help with quick prototyping
+
+"""This submodule contains helper functions to help with quick prototyping 
 using pymunk together with pygame.
 
 Intended to help with debugging and prototyping, not for actual production use
-in a full application. The methods contained in this module is opinionated
-about your coordinate system and not in any way optimized.
+in a full application. The methods contained in this module is opinionated 
+about your coordinate system and not in any way optimized. 
 """
 
 __docformat__ = "reStructuredText"
@@ -76,7 +77,6 @@ When False::
 
 
 class DrawOptions(pymunk.SpaceDebugDrawOptions):
-
     def __init__(self, surface: pygame.Surface) -> None:
         """Draw a pymunk.Space on a pygame.Surface object.
 
@@ -137,7 +137,7 @@ class DrawOptions(pymunk.SpaceDebugDrawOptions):
         p = to_pygame(pos, self.surface)
 
         pygame.draw.circle(self.surface, fill_color.as_int(), p, round(radius), 0)
-        pygame.draw.circle(self.surface, light_color(fill_color).as_int(), p, round(radius - 4), 0)
+        pygame.draw.circle(self.surface, light_color(fill_color).as_int(), p, round(radius-4), 0)
 
         circle_edge = pos + Vec2d(radius, 0).rotated(angle)
         p2 = to_pygame(circle_edge, self.surface)
@@ -167,7 +167,7 @@ class DrawOptions(pymunk.SpaceDebugDrawOptions):
             orthog = [abs(p2[1] - p1[1]), abs(p2[0] - p1[0])]
             if orthog[0] == 0 and orthog[1] == 0:
                 return
-            scale = radius / (orthog[0] * orthog[0] + orthog[1] * orthog[1])**0.5
+            scale = radius / (orthog[0] * orthog[0] + orthog[1] * orthog[1]) ** 0.5
             orthog[0] = round(orthog[0] * scale)
             orthog[1] = round(orthog[1] * scale)
             points = [
@@ -209,7 +209,9 @@ class DrawOptions(pymunk.SpaceDebugDrawOptions):
                 b = verts[(i + 1) % len(verts)]
                 self.draw_fat_segment(a, b, radius, fill_color, fill_color)
 
-    def draw_dot(self, size: float, pos: Tuple[float, float], color: SpaceDebugColor) -> None:
+    def draw_dot(
+        self, size: float, pos: Tuple[float, float], color: SpaceDebugColor
+    ) -> None:
         p = to_pygame(pos, self.surface)
         pygame.draw.circle(self.surface, color.as_int(), p, round(size), 0)
 
