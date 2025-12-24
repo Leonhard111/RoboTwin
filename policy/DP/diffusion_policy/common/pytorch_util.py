@@ -11,6 +11,9 @@ def dict_apply(
     for key, value in x.items():
         if isinstance(value, dict):
             result[key] = dict_apply(value, func)
+        elif isinstance(value, list):
+            # Apply func only to items that have the 'to' method
+            result[key] = [func(item) if hasattr(item, 'to') else item for item in value]
         else:
             result[key] = func(value)
     return result
@@ -39,6 +42,13 @@ def dict_apply_reduce(
         result[key] = reduce_func([x_[key] for x_ in x])
     return result
 
+
+def optimizer_to(optimizer, device):
+    for state in optimizer.state.values():
+        for k, v in state.items():
+            if isinstance(v, torch.Tensor):
+                state[k] = v.to(device=device)
+    return optimizer
 
 def replace_submodules(
         root_module: nn.Module, 
@@ -73,10 +83,3 @@ def replace_submodules(
         if predicate(m)]
     assert len(bn_list) == 0
     return root_module
-
-def optimizer_to(optimizer, device):
-    for state in optimizer.state.values():
-        for k, v in state.items():
-            if isinstance(v, torch.Tensor):
-                state[k] = v.to(device=device)
-    return optimizer
