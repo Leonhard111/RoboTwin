@@ -1,5 +1,5 @@
 #!/bin/bash
-#bash eval.sh beat_block_hammer demo_clean demo_clean 50 0 0
+
 # == keep unchanged ==
 policy_name=DP
 task_name=${1}

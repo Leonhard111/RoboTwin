@@ -10,7 +10,7 @@ from termcolor import cprint
 import copy
 import time
 import numpy as np
-from diffusion_policy.sde_lib import ConsistencyFM
+# from diffusion_policy.sde_lib import ConsistencyFM
 from diffusion_policy.model.common.normalizer import LinearNormalizer
 from diffusion_policy.policy.base_image_policy import BaseImagePolicy
 from diffusion_policy.model.flow.conditional_unet1d import ConditionalUnet1D

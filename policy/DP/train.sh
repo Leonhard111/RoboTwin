@@ -1,5 +1,5 @@
 #!/bin/bash
-
+# bash train.sh beat_block_hammer demo_clean 50 0 14 3
 task_name=${1}
 task_config=${2}
 expert_data_num=${3}

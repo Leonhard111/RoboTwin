@@ -26,7 +26,10 @@ def get_model(usr_args):
     n_obs_steps = model_training_config['n_obs_steps']
     n_action_steps = model_training_config['n_action_steps']
     
+    # model = DP(ckpt_file, n_obs_steps=n_obs_steps, n_action_steps=n_action_steps)
+    # model.policy.num_inference_step = 16
     return DP(ckpt_file, n_obs_steps=n_obs_steps, n_action_steps=n_action_steps)
+    # return model 
 
 
 def eval(TASK_ENV, model, observation):

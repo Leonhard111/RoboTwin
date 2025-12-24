@@ -165,7 +165,7 @@ class RobotWorkspace(BaseWorkspace):
                         if train_sampling_batch is None:
                             train_sampling_batch = batch
                         # compute loss
-                        raw_loss = self.model.compute_loss(batch, self.ema_model)
+                        raw_loss = self.model.compute_loss(batch)
                         loss = raw_loss / cfg.training.gradient_accumulate_every
                         loss.backward()
 
@@ -229,7 +229,7 @@ class RobotWorkspace(BaseWorkspace):
                         ) as tepoch:
                             for batch_idx, batch in enumerate(tepoch):
                                 batch = dataset.postprocess(batch, device)
-                                loss = self.model.compute_loss(batch, self.ema_model)
+                                loss = self.model.compute_loss(batch)
                                 val_losses.append(loss)
                                 if (cfg.training.max_val_steps
                                         is not None) and batch_idx >= (cfg.training.max_val_steps - 1):

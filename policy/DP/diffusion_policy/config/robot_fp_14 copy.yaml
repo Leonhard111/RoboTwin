@@ -54,14 +54,15 @@ policy:
   use_up_condition: true
 
   # for flow policy
-  flow_batch_ratio: 0.75 
-  consistency_batch_ratio: 0.25
-  sample_t_mode_flow: "beta" # choose between beta or lognorm, both are performing well
-  sample_t_mode_consistency: "discrete" 
-  sample_dt_mode_consistency: "uniform"
-  # sample_target_t_mode: "relative" # "absolute", "relative"
-  denoise_timesteps: 10
-  num_inference_steps: 10
+  Conditional_ConsistencyFM:
+    eps: 1e-2
+    num_segments: 2
+    boundary: 1
+    delta: 1e-2
+    alpha: 1e-5
+    num_inference_step: 1
+  eta: 0.01
+
 
 ema:
   _target_: diffusion_policy.model.flow.ema_model.EMAModel
