@@ -5,6 +5,7 @@ import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from einops import reduce
 from termcolor import cprint
 import copy
 import time
@@ -17,6 +18,7 @@ from diffusion_policy.model.flow.mask_generator import LowdimMaskGenerator
 from diffusion_policy.common.pytorch_util import dict_apply
 from diffusion_policy.common.model_util import print_params
 from diffusion_policy.model.vision.multi_image_obs_encoder import MultiImageObsEncoder
+from diffusion_policy.common.sample_util import *
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -36,8 +38,18 @@ class FlowPolicy(BaseImagePolicy):
             use_down_condition=True,
             use_mid_condition=True,
             use_up_condition=True,
-            Conditional_ConsistencyFM=None,           
-            eta=0.01,
+            # Conditional_ConsistencyFM=None,           
+            # eta=0.01,
+            
+            # consistency flow training parameters
+            num_inference_steps=None,
+            flow_batch_ratio=0.75,
+            consistency_batch_ratio=0.25,
+            denoise_timesteps=10,
+            sample_t_mode_flow="beta", 
+            sample_t_mode_consistency="discrete",
+            sample_dt_mode_consistency="uniform", 
+            # sample_target_t_mode="relative", # relative, absolute
             **kwargs):
         super().__init__()
 
@@ -100,26 +112,76 @@ class FlowPolicy(BaseImagePolicy):
         self.obs_as_global_cond = obs_as_global_cond
         self.kwargs = kwargs
         
-        if Conditional_ConsistencyFM is None:
-                    Conditional_ConsistencyFM = {
-                        'eps': 1e-2,
-                        'num_segments': 2,
-                        'boundary': 1,
-                        'delta': 1e-2,
-                        'alpha': 1e-5,
-                        'num_inference_step': 1
-                    }
-        self.eta = eta
-        self.eps = Conditional_ConsistencyFM['eps']
-        self.num_segments = Conditional_ConsistencyFM['num_segments']
-        self.boundary = Conditional_ConsistencyFM['boundary']
-        self.delta = Conditional_ConsistencyFM['delta']
-        self.alpha = Conditional_ConsistencyFM['alpha']
-        self.num_inference_step = Conditional_ConsistencyFM['num_inference_step']
+        # if Conditional_ConsistencyFM is None:
+        #             Conditional_ConsistencyFM = {
+        #                 'eps': 1e-2,
+        #                 'num_segments': 2,
+        #                 'boundary': 1,
+        #                 'delta': 1e-2,
+        #                 'alpha': 1e-5,
+        #                 'num_inference_step': 1
+        #             }
+        # self.eta = eta
+        # self.eps = Conditional_ConsistencyFM['eps']
+        # self.num_segments = Conditional_ConsistencyFM['num_segments']
+        # self.boundary = Conditional_ConsistencyFM['boundary']
+        # self.delta = Conditional_ConsistencyFM['delta']
+        # self.alpha = Conditional_ConsistencyFM['alpha']
+        # self.num_inference_step = Conditional_ConsistencyFM['num_inference_step']
+        self.num_inference_steps = num_inference_steps
+        self.flow_batch_ratio = flow_batch_ratio
+        self.consistency_batch_ratio = consistency_batch_ratio
+        assert flow_batch_ratio + consistency_batch_ratio == 1.0, "Sum of batch ratios should be equal to 1.0"
+        self.denoise_timesteps = denoise_timesteps
+        self.sample_t_mode_flow = sample_t_mode_flow
+        self.sample_t_mode_consistency = sample_t_mode_consistency
+        self.sample_dt_mode_consistency = sample_dt_mode_consistency
+        # self.sample_target_t_mode = sample_target_t_mode
+        # assert self.sample_target_t_mode in ["absolute", "relative"], "sample_target_t_mode must be either 'absolute' or 'relative'"
+
+        cprint(f"[ManiFlowTransformerImagePolicy] Initialized with parameters:", "yellow")
+        cprint(f"  - horizon: {self.horizon}", "yellow")
+        cprint(f"  - n_action_steps: {self.n_action_steps}", "yellow")
+        cprint(f"  - n_obs_steps: {self.n_obs_steps}", "yellow")
+        cprint(f"  - num_inference_steps: {self.num_inference_steps}", "yellow")
+        cprint(f"  - flow_batch_ratio: {self.flow_batch_ratio}", "yellow")
+        cprint(f"  - consistency_batch_ratio: {self.consistency_batch_ratio}", "yellow")
+        cprint(f"  - denoise_timesteps: {self.denoise_timesteps}", "yellow")
+        cprint(f"  - sample_t_mode_flow: {self.sample_t_mode_flow}", "yellow")
+        cprint(f"  - sample_t_mode_consistency: {self.sample_t_mode_consistency}", "yellow")
+        cprint(f"  - sample_dt_mode_consistency: {self.sample_dt_mode_consistency}", "yellow")
+        # cprint(f"  - sample_target_t_mode: {self.sample_target_t_mode}", "yellow")
 
         print_params(self)
         
     # ========= inference  ============
+    def conditional_sample(self, 
+            condition_data, condition_mask,
+            local_cond=None, global_cond=None,
+            generator=None,
+            **kwargs
+            ):
+        
+        noise = torch.randn(
+            size=condition_data.shape, 
+            dtype=condition_data.dtype,
+            device=condition_data.device,
+            generator=generator)
+        
+        ode_traj = self.sample_ode(
+            x0 = noise, 
+            N = self.num_inference_steps,
+            local_cond=local_cond,
+            global_cond=global_cond,
+            condition_data=condition_data,
+            condition_mask=condition_mask,
+           **kwargs)
+        
+        return ode_traj[-1] # sample ode returns the whole traj, return the last one
+    
+
+    
+    
     def predict_action(self, obs_dict: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
         """
         obs_dict: must include "obs" key
@@ -166,36 +228,43 @@ class FlowPolicy(BaseImagePolicy):
             cond_data[:,:To,Da:] = nobs_features
             cond_mask[:,:To,Da:] = True
         
-        # run sampling
-        noise = torch.randn(
-            size=cond_data.shape, 
-            dtype=cond_data.dtype,
-            device=cond_data.device,
-            generator=None)
-        z = noise.detach().clone() # a0
+        # # run sampling
+        # noise = torch.randn(
+        #     size=cond_data.shape, 
+        #     dtype=cond_data.dtype,
+        #     device=cond_data.device,
+        #     generator=None)
+        # z = noise.detach().clone() # a0
 
-        sde = ConsistencyFM('gaussian', 
-                            noise_scale=1.0,  
-                            use_ode_sampler='rk45', # unused
-                            sigma_var=0.0, 
-                            ode_tol=1e-5, 
-                            sample_N= self.num_inference_step)
+        # sde = ConsistencyFM('gaussian', 
+        #                     noise_scale=1.0,  
+        #                     use_ode_sampler='rk45', # unused
+        #                     sigma_var=0.0, 
+        #                     ode_tol=1e-5, 
+        #                     sample_N= self.num_inference_step)
 
-        # Uniform
-        dt = 1./self.num_inference_step
-        eps = self.eps
+        # # Uniform
+        # dt = 1./self.num_inference_step
+        # eps = self.eps
 
-        for i in range(sde.sample_N):
-            num_t = i /sde.sample_N * (1 - eps) + eps
-            t = torch.ones(z.shape[0], device=noise.device) * num_t
-            pred = self.model(z, t*99, local_cond=local_cond, global_cond=global_cond) ### Copy from models/utils.py 
-            # convert to diffusion models if sampling.sigma_variance > 0.0 while perserving the marginal probability 
-            sigma_t = sde.sigma_t(num_t)
-            pred_sigma = pred + (sigma_t**2)/(2*(sde.noise_scale**2)*((1.-num_t)**2)) * (0.5 * num_t * (1.-num_t) * pred - 0.5 * (2.-num_t)*z.detach().clone())
-            z = z.detach().clone() + pred_sigma * dt + sigma_t * np.sqrt(dt) * torch.randn_like(pred_sigma).to(device)
-        z[cond_mask] = cond_data[cond_mask] # a1
+        # for i in range(sde.sample_N):
+        #     num_t = i /sde.sample_N * (1 - eps) + eps
+        #     t = torch.ones(z.shape[0], device=noise.device) * num_t
+        #     pred = self.model(z, t*99, local_cond=local_cond, global_cond=global_cond) ### Copy from models/utils.py 
+        #     # convert to diffusion models if sampling.sigma_variance > 0.0 while perserving the marginal probability 
+        #     sigma_t = sde.sigma_t(num_t)
+        #     pred_sigma = pred + (sigma_t**2)/(2*(sde.noise_scale**2)*((1.-num_t)**2)) * (0.5 * num_t * (1.-num_t) * pred - 0.5 * (2.-num_t)*z.detach().clone())
+        #     z = z.detach().clone() + pred_sigma * dt + sigma_t * np.sqrt(dt) * torch.randn_like(pred_sigma).to(device)
+        # z[cond_mask] = cond_data[cond_mask] # a1
+        nsample = self.conditional_sample(
+            cond_data, 
+            cond_mask,
+            local_cond=local_cond,
+            global_cond=global_cond,
+            **self.kwargs)
+
         # unnormalize prediction
-        naction_pred = z[...,:Da]
+        naction_pred = nsample[...,:Da]
         action_pred = self.normalizer['action'].unnormalize(naction_pred)
         # get action
         start = To - 1
@@ -211,19 +280,14 @@ class FlowPolicy(BaseImagePolicy):
     def set_normalizer(self, normalizer: LinearNormalizer):
         self.normalizer.load_state_dict(normalizer.state_dict())
     
-    def compute_loss(self, batch):
-        eps = self.eps
-        num_segments = self.num_segments
-        boundary = self.boundary
-        delta  = self.delta
-        alpha =  self.alpha
-        reduce_op = torch.mean
+    def compute_loss(self, batch, ema_model=None):
+        # normalize input
         nobs = self.normalizer.normalize(batch['obs'])
         nactions = self.normalizer['action'].normalize(batch['action'])
-        target = nactions
-
+        
         batch_size = nactions.shape[0]
         horizon = nactions.shape[1]
+
         # handle different ways of passing observation
         local_cond = None
         global_cond = None
@@ -250,76 +314,283 @@ class FlowPolicy(BaseImagePolicy):
             nobs_features = nobs_features.reshape(batch_size, horizon, -1)
             cond_data = torch.cat([nactions, nobs_features], dim=-1)
             trajectory = cond_data.detach()
+
         # generate impainting mask
         condition_mask = self.mask_generator(trajectory.shape)
-        # gt & noise
-        target = target
-        a0 = torch.randn(trajectory.shape, device=trajectory.device)
-       
-        t = torch.rand(target.shape[0], device=target.device) * (1 - eps) + eps # 1=sde.T
-        r = torch.clamp(t + delta, max=1.0)
-        t_expand = t.view(-1, 1, 1).repeat(1, target.shape[1], target.shape[2])
-        r_expand = r.view(-1, 1, 1).repeat(1, target.shape[1], target.shape[2])
-        xt = t_expand * target + (1.-t_expand) * a0
-        xr = r_expand * target + (1.-r_expand) * a0
-        #apply mask
-        xt[condition_mask] = cond_data[condition_mask]
-        xr[condition_mask] = cond_data[condition_mask]
-
-        segments = torch.linspace(0, 1, num_segments + 1, device=target.device)
-        seg_indices = torch.searchsorted(segments, t, side="left").clamp(min=1) # .clamp(min=1) prevents the inclusion of 0 in indices.
-        segment_ends = segments[seg_indices]
-        segment_ends_expand = segment_ends.view(-1, 1, 1).repeat(1, target.shape[1], target.shape[2])
-        x_at_segment_ends = segment_ends_expand * target + (1.-segment_ends_expand) * a0
-    
-        def f_euler(t_expand, segment_ends_expand, xt, vt):
-            return xt + (segment_ends_expand - t_expand) * vt
-        def threshold_based_f_euler(t_expand, segment_ends_expand, xt, vt, threshold, x_at_segment_ends):
-            if (threshold, int) and threshold == 0:
-                return x_at_segment_ends
-      
-            less_than_threshold = t_expand < threshold
-      
-            res = (
-        less_than_threshold * f_euler(t_expand, segment_ends_expand, xt, vt)
-        + (~less_than_threshold) * x_at_segment_ends
-        )
-            return res
-        vt = self.model(xt, t*99, cond=local_cond, global_cond=global_cond)
-        vr = self.model(xr, r*99, local_cond=local_cond, global_cond=global_cond)
-        # mask
-        vt[condition_mask] = cond_data[condition_mask]
-        vr[condition_mask] = cond_data[condition_mask]
-
-        vr = torch.nan_to_num(vr)
-      
-        ft = f_euler(t_expand, segment_ends_expand, xt, vt)
-        fr = threshold_based_f_euler(r_expand, segment_ends_expand, xr, vr, boundary, x_at_segment_ends)
-
-        ##### loss #####
-        losses_f = torch.square(ft - fr)
-        losses_f = reduce_op(losses_f.reshape(losses_f.shape[0], -1), dim=-1)
-    
-        def masked_losses_v(vt, vr, threshold, segment_ends, t):
-            if (threshold, int) and threshold == 0:
-                return 0
-    
-            less_than_threshold = t_expand < threshold
-      
-            far_from_segment_ends = (segment_ends - t) > 1.01 * delta
-            far_from_segment_ends = far_from_segment_ends.view(-1, 1, 1).repeat(1, trajectory.shape[1], trajectory.shape[2])
-      
-            losses_v = torch.square(vt - vr)
-            losses_v = less_than_threshold * far_from_segment_ends * losses_v
-            losses_v = reduce_op(losses_v.reshape(losses_v.shape[0], -1), dim=-1)
-      
-            return losses_v
-    
-        losses_v = masked_losses_v(vt, vr, boundary, segment_ends, t)
-
-        loss = torch.mean(losses_f + alpha * losses_v)
-        loss_dict = { 'bc_loss': 
-                     loss.item(),}
         
-        # return loss, loss_dict
+        # Split batch
+        flow_batchsize = int(batch_size * self.flow_batch_ratio)
+        consistency_batchsize = batch_size - flow_batchsize
+        
+        loss = 0.0
+        
+        # Flow Matching Loss
+        if flow_batchsize > 0:
+            traj_flow = trajectory[:flow_batchsize]
+            local_cond_flow = local_cond[:flow_batchsize] if local_cond is not None else None
+            global_cond_flow = global_cond[:flow_batchsize] if global_cond is not None else None
+            
+            flow_target_dict = self.get_flow_velocity(traj_flow, local_cond=local_cond_flow, global_cond=global_cond_flow)
+            
+            x_t = flow_target_dict['x_t']
+            # Apply conditioning
+            if condition_mask is not None:
+                mask_flow = condition_mask[:flow_batchsize]
+                data_flow = cond_data[:flow_batchsize]
+                x_t[mask_flow] = data_flow[mask_flow]
+            
+            v_flow_pred = self.model(
+                x_t, 
+                flow_target_dict['t'].squeeze(), 
+                local_cond=local_cond_flow, 
+                global_cond=global_cond_flow
+            )
+            
+            loss_flow = F.mse_loss(v_flow_pred, flow_target_dict['v_target'], reduction='none')
+            
+            if condition_mask is not None:
+                loss_flow = loss_flow * (~mask_flow).float()
+                
+            loss += reduce(loss_flow, 'b ... -> b (...)', 'mean').mean()
+
+        # Consistency Training Loss
+        if consistency_batchsize > 0:
+            traj_const = trajectory[flow_batchsize:]
+            local_cond_const = local_cond[flow_batchsize:] if local_cond is not None else None
+            global_cond_const = global_cond[flow_batchsize:] if global_cond is not None else None
+            
+            consistency_target_dict = self.get_consistency_velocity(
+                traj_const,
+                local_cond=local_cond_const,
+                global_cond=global_cond_const,
+                ema_model=ema_model
+            )
+            
+            x_t = consistency_target_dict['x_t']
+            # Apply conditioning
+            if condition_mask is not None:
+                mask_const = condition_mask[flow_batchsize:]
+                data_const = cond_data[flow_batchsize:]
+                x_t[mask_const] = data_const[mask_const]
+                
+            v_ct_pred = self.model(
+                x_t,
+                consistency_target_dict['t'].squeeze(),
+                local_cond=local_cond_const,
+                global_cond=global_cond_const
+            )
+            
+            loss_ct = F.mse_loss(v_ct_pred, consistency_target_dict['v_target'], reduction='none')
+            
+            if condition_mask is not None:
+                loss_ct = loss_ct * (~mask_const).float()
+                
+            loss += reduce(loss_ct, 'b ... -> b (...)', 'mean').mean()
+            
         return loss
+
+
+
+    def sample_t(self, batch_size, mode="uniform"):
+        """
+        Sample t for flow matching or consistency training.
+        """
+        if mode == "uniform":
+            t = torch.rand((batch_size,), device=self.device)
+        elif mode == "lognorm":
+            t = sample_logit_normal(batch_size, m=self.lognorm_m, s=self.lognorm_s, device=self.device)
+        elif mode == "mode":
+            t = sample_mode(batch_size, s=self.mode_s, device=self.device)
+        elif mode == "cosmap":
+            t = sample_cosmap(batch_size, device=self.device)
+        elif mode == "beta":
+            t = sample_beta(batch_size, device=self.device)
+        elif mode == "discrete":
+            t = torch.randint(low=0, high=self.denoise_timesteps, size=(batch_size,)).float()
+            t = t / self.denoise_timesteps
+        else:
+            raise ValueError(f" Unsupported sample_t_mode {mode}. Choose from 'uniform', 'lognorm', 'mode', 'cosmap', 'beta', 'discrete'.")
+        return t
+
+    def sample_dt(self, batch_size, sample_dt_mode="uniform"):
+        """
+        Sample dt for consistency training.
+        """
+        if sample_dt_mode == "uniform":
+            dt = torch.rand((batch_size,), device=self.device)
+        else:
+            raise ValueError(f"Unsupported sample_dt_mode {sample_dt_mode}")
+        
+        return dt
+    
+    def linear_interpolate(self, noise, target, timestep, epsilon=0.0):
+        """
+        Linear interpolation between noise and target data with optional noise preservation.
+        
+        Args:
+            noise (Tensor): Initial noise at t=0
+            target (Tensor): Target data point at t=1  
+            timestep (float): Interpolation parameter in [0, 1]
+                            t=0 returns pure noise, t=1 returns target + epsilon*noise
+            epsilon (float): Noise preservation factor. Controls minimum noise retained.
+                            Default 0.0 for standard linear interpolation.
+                            
+        Returns:
+            Tensor: Interpolated data point at given timestep
+            
+        Examples:
+            >>> # Standard linear interpolation (epsilon=0)
+            >>> result = linear_interpolate(noise, data, 0.5)  # 50% noise + 50% data
+            
+            >>> # With noise preservation (epsilon=0.01) 
+            >>> result = linear_interpolate(noise, data, 1.0, epsilon=0.01)  # data + 1% noise
+        """
+        # Calculate noise coefficient with epsilon adjustment
+        noise_coeff = 1.0 - (1.0 - epsilon) * timestep
+        
+        # Linear combination: preserved_noise + scaled_target
+        interpolated_data_point = noise_coeff * noise + timestep * target
+        
+        return interpolated_data_point
+
+    
+    def get_flow_velocity(self, actions, **model_kwargs):
+        """
+        Get flow velocity targets for training.
+        Flow training is used to train the model to predict instantaneous velocity given a timestep.
+        """
+        target_dict = {}
+        
+        # get visual and language conditions
+        local_cond = model_kwargs.get('local_cond', None)
+        global_cond = model_kwargs.get('global_cond', None)
+        flow_batchsize = actions.shape[0]
+        device = actions.device
+        
+        # sample t and dt for flow
+        # dt is zero for flow, as we aim to predict the instantaneous velocity at t
+        t_flow = self.sample_t(flow_batchsize, mode=self.sample_t_mode_flow).to(device)
+        t_flow = t_flow.view(-1, 1, 1)
+        # dt_flow = torch.zeros((flow_batchsize,), device=device)
+        
+        # get target timestep
+        # target_t_flow is the target timestep for the flow step
+        # it can be either absolute or relative to t_flow
+        # if absolute, it is t_flow + dt_flow
+        # if relative, it is just dt_flow
+        # if self.sample_target_t_mode == "absolute":
+        #     target_t_flow = t_flow.squeeze() + dt_flow
+        # elif self.sample_target_t_mode == "relative":
+        #     target_t_flow = dt_flow
+        
+        # compute interpolated data points at t and predict flow velocity
+        x_0_flow = torch.randn_like(actions, device=device) 
+        x_1_flow = actions.to(device) 
+        x_t_flow = self.linear_interpolate(x_0_flow, x_1_flow, t_flow, epsilon=0.0)
+        v_t_flow = x_1_flow - x_0_flow
+
+        target_dict['x_t'] = x_t_flow
+        target_dict['t'] = t_flow
+        # target_dict['target_t'] = target_t_flow
+        target_dict['v_target'] = v_t_flow
+        target_dict['local_cond'] = local_cond
+        target_dict['global_cond'] = global_cond
+
+        return target_dict
+    
+    def get_consistency_velocity(self, actions, **model_kwargs):
+        """
+        Get consistency velocity targets for training.
+        Consistency training is used to train the model to be consistent across different timesteps.
+        """
+        target_dict = {}
+        
+        # get visual and language conditions
+        local_cond = model_kwargs.get('local_cond', None)
+        global_cond = model_kwargs.get('global_cond', None)
+        ema_model = model_kwargs.get('ema_model', None)
+        consistency_batchsize = actions.shape[0]
+        device = actions.device
+
+        # sample t and dt for consistency training
+        t_ct = self.sample_t(consistency_batchsize, mode=self.sample_t_mode_consistency).to(device)
+        t_ct = t_ct.view(-1, 1, 1)
+        delta_t1 = self.sample_dt(consistency_batchsize, sample_dt_mode=self.sample_dt_mode_consistency).to(device)
+        # delta_t2 = self.sample_dt(consistency_batchsize, sample_dt_mode=self.sample_dt_mode_consistency).to(device)
+        # delta_t2 = delta_t1.clone() # use the same delta_t or resample a new one
+
+        # compute next timestep
+        t_next = t_ct.squeeze() + delta_t1
+        t_next = torch.clamp(t_next, max=1.0) # clip t to ensure it does not exceed 1.0
+        t_next = t_next.view(-1, 1, 1)
+        
+        # compute target timestep
+        # target_t_next is the target timestep for the next step
+        # it can be either absolute or relative to t_next
+        # if absolute, it is t_next + delta_t2
+        # if relative, it is just delta_t2
+        # if self.sample_target_t_mode == "absolute":
+        #     target_t_next = t_next.squeeze() + delta_t2
+        # elif self.sample_target_t_mode == "relative":
+        #     target_t_next = delta_t2
+
+        # compute interpolated data points at timestep t and t_next
+        x0_ct = torch.randn_like(actions, device=device) 
+        x1_ct = actions.to(device) 
+        x_t_ct = self.linear_interpolate(x0_ct, x1_ct, t_ct, epsilon=0.0)
+        x_t_next = self.linear_interpolate(x0_ct, x1_ct, t_next, epsilon=0.0)
+
+        # predict the average velocity from t_next toward next target (t_next + delta_t2)
+        with torch.no_grad():
+            v_avg_to_next_target = ema_model.model(
+                sample=x_t_next, 
+                timestep=t_next.squeeze(),
+                # target_t=target_t_next.squeeze(), 
+                local_cond=local_cond[-consistency_batchsize:] if local_cond is not None else None,
+                global_cond=global_cond[-consistency_batchsize:] if global_cond is not None else None,
+            ) 
+        # predict the target data point using the average velocity
+        pred_x1_ct = x_t_next + (1 - t_next) * v_avg_to_next_target
+        # estimate the velocity at t by using the predicted endpoint
+        v_ct = (pred_x1_ct - x_t_ct) / (1 - t_ct)
+
+        # target_t_ct is the target timestep for the current timestep t
+        # target_t_ct = delta_t1 if self.sample_target_t_mode == "relative" else t_next.squeeze()
+        
+        target_dict['x_t'] = x_t_ct
+        target_dict['t'] = t_ct
+        # target_dict['target_t'] = target_t_ct
+        target_dict['v_target'] = v_ct
+
+        return target_dict
+    
+    @torch.no_grad()
+    def sample_ode(self, x0, N=None, local_cond=None, global_cond=None, condition_data=None, condition_mask=None, **model_kwargs):
+        ### NOTE: Use Euler method to sample from the learned flow
+        if N is None:
+            N = self.num_inference_steps
+        dt = 1./N
+        traj = [] # to store the trajectory
+        x = x0.detach().clone()
+        batchsize = x.shape[0]
+
+        t = torch.arange(0, N, device=x0.device, dtype=x0.dtype) / N
+        traj.append(x.detach().clone())
+
+        for i in range(N):
+            ti = torch.ones((batchsize,), device=self.device) * t[i]
+            
+            # Apply conditioning
+            if condition_mask is not None:
+                x[condition_mask] = condition_data[condition_mask]
+
+            pred = self.model(x, ti, local_cond=local_cond, global_cond=global_cond)
+            x = x.detach().clone() + pred * dt
+            traj.append(x.detach().clone())
+        
+        # Apply conditioning to the final step
+        if condition_mask is not None:
+            x[condition_mask] = condition_data[condition_mask]
+            traj[-1] = x.detach().clone()
+
+        return traj
