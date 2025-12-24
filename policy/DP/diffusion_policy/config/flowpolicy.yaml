@@ -48,7 +48,15 @@ policy:
   use_down_condition: true
   use_mid_condition: true
   use_up_condition: true
-
+  # for flow policy
+  Conditional_ConsistencyFM:
+    eps: 1e-2         # t的下界
+    num_segments: 2   # 分割数
+    boundary: 1       # r的上界
+    delta: 1e-2       # t,r的间隔
+    alpha: 1e-5       # loss的系数
+    num_inference_step: 1
+  eta: 0.01
 
 ema:
   _target_: diffusion_policy.model.flow.ema_model.EMAModel

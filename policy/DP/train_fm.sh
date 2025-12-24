@@ -1,4 +1,5 @@
 #!/bin/bash
+# start  11:20
 # bash train_fm.sh beat_block_hammer demo_clean 50 0 14 3
 task_name=${1}
 task_config=${2}
