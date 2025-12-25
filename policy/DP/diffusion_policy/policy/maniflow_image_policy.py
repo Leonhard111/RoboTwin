@@ -471,7 +471,8 @@ class ManiFlowTransformerImagePolicy(BasePolicy):
         
         """Get flow and consistency targets"""
         flow_batchsize = int(batch_size * self.flow_batch_ratio)
-        consistency_batchsize = int(batch_size * self.consistency_batch_ratio)
+        # consistency_batchsize = int(batch_size * self.consistency_batch_ratio)
+        consistency_batchsize = batch_size - flow_batchsize
     
 
         # Get flow targets

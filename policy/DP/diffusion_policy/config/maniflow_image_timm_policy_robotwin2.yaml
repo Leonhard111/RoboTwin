@@ -1,5 +1,4 @@
 defaults:
-  - _self_
   - task: demo_task_image
 
 name: train_maniflow_image_timm_policy
@@ -17,7 +16,7 @@ keypoint_visible_rate: 1.0
 obs_as_global_cond: true
 
 policy:
-  _target_: maniflow.policy.maniflow_image_policy.ManiFlowTransformerImagePolicy
+  _target_: diffusion_policy.policy.maniflow_image_policy.ManiFlowTransformerImagePolicy
   block_type: "DiTX"
   n_layer: 12  # max 28
   n_head: 8  # max 16
@@ -52,7 +51,7 @@ policy:
   shape_meta: ${shape_meta}
 
   obs_encoder:
-    _target_: maniflow.model.vision.timm_obs_encoder.TimmObsEncoder
+    _target_: diffusion_policy.model.vision.timm_obs_encoder.TimmObsEncoder
     shape_meta: ${shape_meta}
 
     ##### from scratch #####
@@ -102,7 +101,7 @@ policy:
 
 
 ema:
-  _target_: maniflow.model.diffusion.ema_model.EMAModel
+  _target_: diffusion_policy.model.diffusion.ema_model.EMAModel
   update_after_step: 0
   inv_gamma: 1.0
   power: 0.75
@@ -190,4 +189,3 @@ hydra:
 checkpoint_num: 500
 expert_data_num: 50
 raw_task_name: none
-setting: none

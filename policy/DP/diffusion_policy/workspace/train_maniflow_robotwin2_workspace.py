@@ -37,16 +37,16 @@ import shutil
 import time
 import threading
 import sys
-sys.path.insert(0, '../')
-sys.path.append('ManiFlow/env_runner')
-sys.path.append('ManiFlow/maniflow/policy')
-sys.path.append('ManiFlow')
-sys.path.append('ManiFlow/maniflow')
+# sys.path.insert(0, '../')
+# sys.path.append('ManiFlow/env_runner')
+# sys.path.append('ManiFlow/maniflow/policy')
+# sys.path.append('ManiFlow')
+# sys.path.append('ManiFlow/maniflow')
 
 from hydra.core.hydra_config import HydraConfig
 from diffusion_policy.policy.maniflow_image_policy import ManiFlowTransformerImagePolicy
 from diffusion_policy.dataset.base_dataset import BaseDataset
-from diffusion_policy.env_runner.base_image_runner import BaseImageRunner
+from diffusion_policy.env_runner.robot_runner import RobotRunner
 from diffusion_policy.common.checkpoint_util import TopKCheckpointManager
 from diffusion_policy.common.pytorch_util import dict_apply, optimizer_to
 from diffusion_policy.model.diffusion.ema_model import EMAModel
@@ -121,7 +121,7 @@ class TrainManiFlowRoboTwinWorkspace:
 
         # configure dataset
         dataset: BaseDataset
-        dataset = hydra.utils.instantiate(cfg.robotwin_task.dataset)
+        dataset = hydra.utils.instantiate(cfg.task.dataset)
 
         assert isinstance(dataset, BaseDataset), print(f"dataset must be BaseDataset, got {type(dataset)}")
         train_dataloader = DataLoader(dataset, **cfg.dataloader)
@@ -165,13 +165,13 @@ class TrainManiFlowRoboTwinWorkspace:
         # configure env runner
         # env_runner: BaseImageRunner
         # env_runner = hydra.utils.instantiate(
-        #     cfg.robotwin_task.env_runner,
+        #     cfg.task.env_runner,
         #     output_dir=self.output_dir)
         # assert isinstance(env_runner, BaseImageRunner)
 
         env_runner = None
         
-        cfg.logging.name = str(cfg.robotwin_task.name)
+        cfg.logging.name = str(cfg.task.name)
         cprint("-----------------------------", "yellow")
         cprint(f"[WandB] group: {cfg.logging.group}", "yellow")
         cprint(f"[WandB] name: {cfg.logging.name}", "yellow")
@@ -366,13 +366,13 @@ class TrainManiFlowRoboTwinWorkspace:
                     metric_dict[new_key] = value
                 
                 # if not cfg.policy.use_pc_color:
-                #     if not os.path.exists(f'checkpoints/{self.cfg.robotwin_task.name}'):
-                #         os.makedirs(f'checkpoints/{self.cfg.robotwin_task.name}')
-                #     save_path = f'checkpoints/{self.cfg.robotwin_task.name}/{self.epoch + 1}.ckpt'
+                #     if not os.path.exists(f'checkpoints/{self.cfg.task.name}'):
+                #         os.makedirs(f'checkpoints/{self.cfg.task.name}')
+                #     save_path = f'checkpoints/{self.cfg.task.name}/{self.epoch + 1}.ckpt'
                 # else:
-                #     if not os.path.exists(f'checkpoints/{self.cfg.robotwin_task.name}_w_rgb'):
-                #         os.makedirs(f'checkpoints/{self.cfg.robotwin_task.name}_w_rgb')
-                #     save_path = f'checkpoints/{self.cfg.robotwin_task.name}_w_rgb/{self.epoch + 1}.ckpt'
+                #     if not os.path.exists(f'checkpoints/{self.cfg.task.name}_w_rgb'):
+                #         os.makedirs(f'checkpoints/{self.cfg.task.name}_w_rgb')
+                #     save_path = f'checkpoints/{self.cfg.task.name}_w_rgb/{self.epoch + 1}.ckpt'
 
                 # self.save_checkpoint(save_path)
                 try:
@@ -396,113 +396,116 @@ class TrainManiFlowRoboTwinWorkspace:
             self.epoch += 1
             del step_log
     
-    def eval(self, mode='best'):
-        # load the latest checkpoint
-        cfg = copy.deepcopy(self.cfg)
+    # def eval(self, mode='best'):
+    #     # load the latest checkpoint
+    #     cfg = copy.deepcopy(self.cfg)
         
+    #     lastest_ckpt_path = self.get_checkpoint_path(tag=mode, monitor_key=cfg.checkpoint.topk.monitor_key)
+    #     if lastest_ckpt_path.is_file():
+    #         cprint(f"Resuming from {mode} checkpoint {lastest_ckpt_path}", 'magenta')
+    #         self.load_checkpoint(path=lastest_ckpt_path)
+    #         # print ckpt info
+    #         cprint(f"{self.epoch} epochs, {self.global_step} steps", 'magenta')
+        
+    #     # configure env
+    #     env_runner: BaseImageRunner
+    #     env_runner = hydra.utils.instantiate(
+    #         cfg.task.env_runner,
+    #         output_dir=self.output_dir)
+    #     assert isinstance(env_runner, BaseImageRunner)
+    #     policy = self.model
+    #     if cfg.training.use_ema:
+    #         policy = self.ema_model
+    #     policy.eval()
+    #     policy.cuda()
+
+    #     # inference_steps = cfg.policy.num_inference_steps
+    #     all_rollout_steps = [10] # [10, 1, 4, 2, 8]
+    #     for inference_steps in all_rollout_steps:
+    #         eval_episodes = cfg.task.env_runner.eval_episodes
+    #         cprint(f"Running evaluation for {inference_steps} inference steps", 'magenta')
+
+    #         horizon = policy.horizon
+    #         n_action_steps = policy.n_action_steps
+    #         cprint(f"Evaluating with horizon={horizon}, n_action_steps={n_action_steps}, eval_episodes={eval_episodes}, inference_steps={inference_steps}", 'magenta')
+
+    #         # Create eval results directory
+    #         eval_dir = os.path.join(self.output_dir, f'eval_results/{self.epoch}/eval_{eval_episodes}_episodes/horizon{horizon}_act{n_action_steps}/{inference_steps}')
+    #         os.makedirs(eval_dir, exist_ok=True)
+
+    #         policy.num_inference_steps = inference_steps
+    #         runner_log = env_runner.run(policy)
+
+        
+    #         cprint(f"---------------- Eval Results --------------", 'magenta')
+    #         metrics_dict = {}
+    #         for key, value in runner_log.items():
+    #             if isinstance(value, float):
+    #                 metrics_dict[key] = value
+    #                 cprint(f"{key}: {value:.4f}", 'magenta')
+    #             if isinstance(value, dict):
+    #                 for k, v in value.items():
+    #                     if isinstance(v, float):
+    #                         metrics_dict[f"{key}/{k}"] = v
+    #                         cprint(f"{key}/{k}: {v:.4f}", 'magenta')
+            
+    #         # Save metrics to JSON
+    #         import json
+    #         metrics_path = os.path.join(eval_dir, f'metrics_{mode}_{self.epoch}.json')
+    #         with open(metrics_path, 'w') as f:
+    #             json.dump(metrics_dict, f, indent=4)
+            
+    #         # Save videos if they exist in runner_log
+    #         runner_log.pop('average_success_rate', None) # Remove average_success_rate from runner_log
+    #         video_id = 0
+    #         task_name = runner_log['task_name']
+    #         for k, v in runner_log.items():
+    #             if 'video' in k:
+    #                 if isinstance(v, np.ndarray):
+    #                     video_dir = os.path.join(eval_dir, 'videos', task_name)
+    #                     os.makedirs(video_dir, exist_ok=True)
+    #                     video_path = os.path.join(video_dir, f'{k}_{mode}_{self.epoch}_{video_id}.mp4')
+                        
+    #                     # Convert from N, C, H, W to N, H, W, C format for saving
+    #                     v = np.transpose(v, (0, 2, 3, 1))
+    #                     # Save video using imageio or cv2
+    #                     import imageio
+    #                     imageio.mimsave(video_path, v, fps=10)
+    #                 elif hasattr(v, '_path'):  # Handle wandb.Video object
+    #                     video_dir = os.path.join(eval_dir, 'videos', task_name)
+    #                     os.makedirs(video_dir, exist_ok=True)
+    #                     video_path = os.path.join(video_dir, f'{k}_{mode}_{self.epoch}_{video_id}.mp4')
+    #                     # Copy the video file from wandb path to our eval directory
+    #                     shutil.copy2(v._path, video_path)
+    #                 else:
+    #                     cprint(f"Unknown video format for {k}", 'red')
+    #                 video_id += 1
+    #         cprint(f"Evaluation results saved to {eval_dir}", 'magenta')
+
+    
+    def get_policy_and_runner(self, cfg, usr_args, mode='latest'):
+        # load the latest checkpoint
+        
+        cfg = copy.deepcopy(self.cfg)
+        output_dir = self.output_dir
         lastest_ckpt_path = self.get_checkpoint_path(tag=mode, monitor_key=cfg.checkpoint.topk.monitor_key)
         if lastest_ckpt_path.is_file():
             cprint(f"Resuming from {mode} checkpoint {lastest_ckpt_path}", 'magenta')
-            self.load_checkpoint(path=lastest_ckpt_path)
+            self.load_checkpoint(path=lastest_ckpt_path) # rewrite self.output_dir
             # print ckpt info
             cprint(f"{self.epoch} epochs, {self.global_step} steps", 'magenta')
-        
-        # configure env
-        env_runner: BaseImageRunner
-        env_runner = hydra.utils.instantiate(
-            cfg.robotwin_task.env_runner,
-            output_dir=self.output_dir)
-        assert isinstance(env_runner, BaseImageRunner)
-        policy = self.model
-        if cfg.training.use_ema:
-            policy = self.ema_model
-        policy.eval()
-        policy.cuda()
-
-        # inference_steps = cfg.policy.num_inference_steps
-        all_rollout_steps = [10] # [10, 1, 4, 2, 8]
-        for inference_steps in all_rollout_steps:
-            eval_episodes = cfg.robotwin_task.env_runner.eval_episodes
-            cprint(f"Running evaluation for {inference_steps} inference steps", 'magenta')
-
-            horizon = policy.horizon
-            n_action_steps = policy.n_action_steps
-            cprint(f"Evaluating with horizon={horizon}, n_action_steps={n_action_steps}, eval_episodes={eval_episodes}, inference_steps={inference_steps}", 'magenta')
-
-            # Create eval results directory
-            eval_dir = os.path.join(self.output_dir, f'eval_results/{self.epoch}/eval_{eval_episodes}_episodes/horizon{horizon}_act{n_action_steps}/{inference_steps}')
-            os.makedirs(eval_dir, exist_ok=True)
-
-            policy.num_inference_steps = inference_steps
-            runner_log = env_runner.run(policy)
-
-        
-            cprint(f"---------------- Eval Results --------------", 'magenta')
-            metrics_dict = {}
-            for key, value in runner_log.items():
-                if isinstance(value, float):
-                    metrics_dict[key] = value
-                    cprint(f"{key}: {value:.4f}", 'magenta')
-                if isinstance(value, dict):
-                    for k, v in value.items():
-                        if isinstance(v, float):
-                            metrics_dict[f"{key}/{k}"] = v
-                            cprint(f"{key}/{k}: {v:.4f}", 'magenta')
-            
-            # Save metrics to JSON
-            import json
-            metrics_path = os.path.join(eval_dir, f'metrics_{mode}_{self.epoch}.json')
-            with open(metrics_path, 'w') as f:
-                json.dump(metrics_dict, f, indent=4)
-            
-            # Save videos if they exist in runner_log
-            runner_log.pop('average_success_rate', None) # Remove average_success_rate from runner_log
-            video_id = 0
-            task_name = runner_log['task_name']
-            for k, v in runner_log.items():
-                if 'video' in k:
-                    if isinstance(v, np.ndarray):
-                        video_dir = os.path.join(eval_dir, 'videos', task_name)
-                        os.makedirs(video_dir, exist_ok=True)
-                        video_path = os.path.join(video_dir, f'{k}_{mode}_{self.epoch}_{video_id}.mp4')
-                        
-                        # Convert from N, C, H, W to N, H, W, C format for saving
-                        v = np.transpose(v, (0, 2, 3, 1))
-                        # Save video using imageio or cv2
-                        import imageio
-                        imageio.mimsave(video_path, v, fps=10)
-                    elif hasattr(v, '_path'):  # Handle wandb.Video object
-                        video_dir = os.path.join(eval_dir, 'videos', task_name)
-                        os.makedirs(video_dir, exist_ok=True)
-                        video_path = os.path.join(video_dir, f'{k}_{mode}_{self.epoch}_{video_id}.mp4')
-                        # Copy the video file from wandb path to our eval directory
-                        shutil.copy2(v._path, video_path)
-                    else:
-                        cprint(f"Unknown video format for {k}", 'red')
-                    video_id += 1
-            cprint(f"Evaluation results saved to {eval_dir}", 'magenta')
-
-
-    def get_policy_and_runner(self, cfg, checkpoint_num=3000):
-        # load the latest checkpoint
-        
-        cfg = copy.deepcopy(self.cfg)
-        env_runner: BaseImageRunner
-        env_runner = hydra.utils.instantiate(
-            cfg.robotwin_task.env_runner,
-            output_dir=self.output_dir)
-        assert isinstance(env_runner, BaseImageRunner)
-        
-        if not cfg.policy.use_pc_color:
-            ckpt_file = pathlib.Path(f'./checkpoints/{self.cfg.robotwin_task.name}/{checkpoint_num}.ckpt')
         else:
-            ckpt_file = pathlib.Path(f'./checkpoints/{self.cfg.robotwin_task.name}_w_rgb/{checkpoint_num}.ckpt')
-
-        print('ckpt file exist:', ckpt_file.is_file())
+            cprint(f"Checkpoint {lastest_ckpt_path} does not exist!", 'red')
         
-        if ckpt_file.is_file():
-            cprint(f"Resuming from checkpoint {ckpt_file}", 'magenta')
-            self.load_checkpoint(path=ckpt_file)
+        n_obs_steps = cfg['n_obs_steps']
+        n_action_steps = cfg['n_action_steps']
+
+        env_runner = RobotRunner(
+            output_dir=output_dir,
+            n_obs_steps=n_obs_steps, 
+            n_action_steps=n_action_steps)
+        self._output_dir = output_dir # recover output_dir
+        
         
         policy = self.model
         if cfg.training.use_ema:
@@ -510,7 +513,8 @@ class TrainManiFlowRoboTwinWorkspace:
     
         policy.eval()
         policy.cuda()
-        return policy, env_runner
+        return policy, env_runner, self.epoch
+
 
     @property
     def output_dir(self):

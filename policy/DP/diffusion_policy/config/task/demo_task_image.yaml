@@ -20,36 +20,20 @@ shape_meta: &shape_meta
     shape: [14]
     horizon: ${horizon}
 
-# env_runner:
-#   _target_: diffusion_policy.env_runner.robot_runner.RobotRunner
-  # n_train: 6
-  # n_train_vis: 2
-  # train_start_seed: 0
-  # n_test: 50
-  # n_test_vis: 4
-  # legacy_test: True
-  # test_start_seed: 100000
-  # max_steps: 300
-  # n_obs_steps: ${n_obs_steps}
-  # n_action_steps: ${n_action_steps}
-  # fps: 10
-  # past_action: ${past_action_visible}
-  # n_envs: null
-
-  env_runner:
-  _target_: diffusion_policy.env_runner.robotwin_runner.RobotRunner
+env_runner:
+  _target_: maniflow.env_runner.robotwin_runner.RobotRunner
   max_steps: 300
   n_obs_steps: ${n_obs_steps}
   n_action_steps: ${n_action_steps}
   task_name: robot
 
 dataset:
-  _target_: diffusion_policy.dataset.robot_image_dataset.RobotImageDataset
-  zarr_path: data/useless.zarr
-  batch_size: ${dataloader.batch_size}
+  _target_: maniflow.dataset.robotwin_image_dataset.RoboTwinImageDataset
+  zarr_path: data/${task.name}.zarr
   horizon: ${horizon}
+  n_obs_steps: ${n_obs_steps}
   pad_before: ${eval:'${n_obs_steps}-1'}
   pad_after: ${eval:'${n_action_steps}-1'}
-  seed: 42
+  seed: 0
   val_ratio: 0.02
   max_train_episodes: null
