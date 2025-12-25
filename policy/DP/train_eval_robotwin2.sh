@@ -6,8 +6,8 @@
 # bash train_eval_robotwin2.sh lift_pot maniflow_image_transformer_policy_robotwin2 demo_randomized 50 1112 0 0
 # bash train_eval_robotwin2.sh beat_block_hammer  maniflow_image_timm_policy_robotwin2 demo_clean  50 1004 0 3
 
-train=false
-eval=true
+train=true
+eval=false
 train_task_config=${3} # setting for training, demo_clean or demo_randomized, add here for clarity
 # eval_task_config=demo_randomized # setting for evaluation, demo_clean or demo_randomized
 eval_task_config=${3}
@@ -30,6 +30,7 @@ if [ "$train" = true ]; then
         bash process_data.sh ${task_name} ${task_config} ${expert_data_num}
     fi
     bash scripts/train_policy.sh ${alg_name} ${task_name} ${task_config} ${expert_data_num} ${addition_info} ${seed} ${gpu_id}
+    echo "Training is over."
 else
     echo "Training is disabled."
 fi
@@ -65,3 +66,5 @@ python script/eval_policy.py --config policy/${policy_name}/deploy_policy.yml \
     --policy_name ${policy_name} \
     --addition_info ${addition_info} \
     --alg_name ${alg_name}
+
+echo "Evaluation is enabled."

@@ -50,6 +50,3 @@ python train_maniflow_robotwin2_workspace.py \
     checkpoint.save_ckpt=${save_ckpt} \
     expert_data_num=${expert_data_num} \
     setting=${setting}
-    
-
-cd ../..

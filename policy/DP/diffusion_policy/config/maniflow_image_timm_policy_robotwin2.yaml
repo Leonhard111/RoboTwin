@@ -1,5 +1,6 @@
 defaults:
-  - task: demo_task_image
+  - _self_
+  - task: default_task_14
 
 name: train_maniflow_image_timm_policy
 
@@ -189,3 +190,4 @@ hydra:
 checkpoint_num: 500
 expert_data_num: 50
 raw_task_name: none
+setting: none
