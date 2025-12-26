@@ -1,3 +1,4 @@
+from threadpoolctl import threadpool_limits
 from typing import Dict
 import torch
 import numpy as np
@@ -14,6 +15,7 @@ class RoboTwinImageDataset(BaseDataset):
     def __init__(self,
             zarr_path, 
             horizon=1,
+            n_obs_steps=2,
             pad_before=0,
             pad_after=0,
             seed=42,
@@ -60,6 +62,7 @@ class RoboTwinImageDataset(BaseDataset):
         self.horizon = horizon
         self.pad_before = pad_before
         self.pad_after = pad_after
+        self.n_obs_steps = n_obs_steps
 
         self.zarr_path = zarr_path
         self.train_episodes_num = np.sum(train_mask)
@@ -111,8 +114,15 @@ class RoboTwinImageDataset(BaseDataset):
         return data
     
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
+        threadpool_limits(1)
         sample = self.sampler.sample_sequence(idx)
         data = self._sample_to_data(sample)
+        # to save RAM, only return first n_obs_steps of OBS
+        # since the rest will be discarded anyway.
+        # when self.n_obs_steps is None
+        # this slice does nothing (takes all)
+        T_slice = slice(self.n_obs_steps)
+        data['obs'] = {k: v[T_slice] for k, v in data['obs'].items()}
         torch_data = dict_apply(data, torch.from_numpy)
 
         return torch_data
