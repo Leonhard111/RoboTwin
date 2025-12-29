@@ -1,6 +1,7 @@
 import numpy as np
 from .dp_model import DP
 import yaml
+import time
 
 def encode_obs(observation):
     head_cam = (np.moveaxis(observation["observation"]["head_camera"]["rgb"], -1, 0) / 255)
@@ -40,8 +41,12 @@ def eval(TASK_ENV, model, observation, record_actions=False):
     instruction = TASK_ENV.get_instruction()
 
     # ======== Get Action ========
+    start_time = time.time()
     actions = model.get_action(obs)
-    
+    end_time = time.time()
+    latency = (end_time - start_time) * 1000  # 转换为毫秒
+    print(f"***********推理延迟***********: {latency:.2f} ms")
+ 
     executed_actions = [] if record_actions else None
 
     for action in actions:
