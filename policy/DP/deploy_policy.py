@@ -103,7 +103,12 @@ def eval(TASK_ENV, model, observation):
     ) == 0:  # Force an update of the observation at the first frame to avoid an empty observation window, `obs_cache` here can be modified
         model.update_obs(obs)
 
+    start_time = time.time()
     actions = model.get_action()  # Get Action according to observation chunk
+    end_time = time.time()
+    latency = (end_time - start_time) * 1000  # 转换为毫秒
+    print(f"***********推理延迟: {latency:.2f} ms***********")
+    
       # Debugging breakpoint
     for action in actions:  # Execute each step of the action
         TASK_ENV.take_action(action)
