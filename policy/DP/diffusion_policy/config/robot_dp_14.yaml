@@ -9,9 +9,9 @@ task_name: ${task.name}
 shape_meta: ${task.shape_meta}
 exp_name: "default"
 
-horizon: 8
-n_obs_steps: 3
-n_action_steps: 6
+horizon: 8          # 数据读取长度
+n_obs_steps: 3      # 观测的使用长度      由于训练时时间戳是对应的，导致执行时前obs_step个动作都没用
+n_action_steps: 6   # 有效动作的提取长度  ,但是由于切片的读取规则，导致其动作只能是 horizon - n_obs_steps + 1的长度
 n_latency_steps: 0
 dataset_obs_steps: ${n_obs_steps}
 past_action_visible: False

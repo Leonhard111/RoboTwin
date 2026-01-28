@@ -108,7 +108,7 @@ def eval(TASK_ENV, model, observation):
     end_time = time.time()
     latency = (end_time - start_time) * 1000  # 转换为毫秒
     print(f"***********推理延迟: {latency:.2f} ms***********")
-    
+    print(actions.shape)
       # Debugging breakpoint
     for action in actions:  # Execute each step of the action
         TASK_ENV.take_action(action)
