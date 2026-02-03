@@ -1,4 +1,4 @@
-_target_: dyn_model.models.vit.ViTPredictor
+_target_: dyn_model.model.vit.ViTPredictor
 depth: 6
 heads: 16
 mlp_dim: 2048

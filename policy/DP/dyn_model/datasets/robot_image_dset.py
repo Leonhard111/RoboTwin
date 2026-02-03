@@ -8,7 +8,7 @@ from torch.utils.data import Dataset
 from diffusion_policy.common.replay_buffer import ReplayBuffer
 from diffusion_policy.common.normalize_util import array_to_stats, get_range_normalizer_from_stat, get_image_range_normalizer, get_identity_normalizer_from_stat
 from diffusion_policy.model.common.normalizer import LinearNormalizer
-from dyn_model.datasets.img_transforms import default_transform
+from dyn_model.datasets.img_transforms import default_transform, get_train_crop_transform_resnet, get_eval_crop_transform_resnet
 
 class RobotImageDynamicsModelDataset(Dataset):
     def __init__(self, 
@@ -32,7 +32,10 @@ class RobotImageDynamicsModelDataset(Dataset):
         self.use_crop = use_crop
         self.train = train
         self.view_names = view_names
+        self.original_img_size = original_img_size
+        self.cropped_img_size = cropped_img_size
 
+        self.original_action_dim = action_dim
         # 1. Load data
         print(f"Loading data from {zarr_path}")
         self.replay_buffer = ReplayBuffer.copy_from_path(
@@ -57,6 +60,8 @@ class RobotImageDynamicsModelDataset(Dataset):
         if action_dim is not None:
             assert self.action_dim == action_dim, f"Config action_dim {action_dim} != dataset {self.action_dim}"
 
+        self.action_dim = self.original_action_dim * frameskip
+        
         # 3. Compute valid anchor indices
         # TODO:检查下表是否从1开始
         self.episode_ends = self.replay_buffer.episode_ends[:]
@@ -80,6 +85,12 @@ class RobotImageDynamicsModelDataset(Dataset):
         # 4. Transform
         self.transform = default_transform()
         # Note: If crop transforms are needed, they can be added here similar to RobomimicImageDynamicsModelDataset
+        if self.use_crop:
+            if self.train:
+                self.transform = get_train_crop_transform_resnet(original_img_size, cropped_img_size)
+            else:
+                self.transform = get_eval_crop_transform_resnet(original_img_size, cropped_img_size)
+        
 
     def __len__(self):
         return len(self.valid_anchor_indices)
@@ -122,8 +133,8 @@ class RobotImageDynamicsModelDataset(Dataset):
         
         # Action Normalizer
         act_stat = array_to_stats(self.actions)
-        # Assuming actions might need normalization or are within range, using identity for now as safest default if already normalized
-        normalizer['act'] = get_identity_normalizer_from_stat(act_stat)
+
+        normalizer['act'] = get_range_normalizer_from_stat(act_stat)
         
         # State Normalizer
         state_stat = array_to_stats(self.states)

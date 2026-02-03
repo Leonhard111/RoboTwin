@@ -91,6 +91,23 @@ def get_model(usr_args):
     OmegaConf.set_struct(cfg, True)
 
     ManiFlow_Model = ManiFlow(cfg, usr_args, run_dir=run_dir)
+    
+    '''
+    TODO:
+    初始化planner
+    '''
+    ManiFlow_Model.policy.initialize_planner(
+        planner_target=usr_args['planner_target'],
+        demo_dataset_config=cfg.task.dataset,
+        dynamics_model_ckpt=usr_args['dynamics_model_checkpoint'],
+        action_step=cfg.n_action_steps,
+        output_dir=usr_args['output_dir'],
+        guidance_start_timestep=usr_args['guidance_start_timestep'],
+        guidance_scale=usr_args['guidance_scale'],
+        threshold=usr_args['threshold'],
+        demo_dataset_path=usr_args.get('demo_dataset_path', None)
+    )
+    
     return ManiFlow_Model
 
 
@@ -126,7 +143,7 @@ def eval_guided(TASK_ENV, model, observation):
         model.update_obs(obs)
 
     start_time = time.time()
-    actions = model.get_guided_action()  # Get Action according to observation chunk
+    actions = model.get_action()  # Get Action according to observation chunk
     end_time = time.time()
     latency = (end_time - start_time) * 1000  # 转换为毫秒
     print(f"***********推理延迟: {latency:.2f} ms***********")

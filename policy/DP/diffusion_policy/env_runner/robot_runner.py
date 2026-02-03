@@ -115,7 +115,30 @@ class RobotRunner(BaseImageRunner):
         action = np_action_dict['action'].squeeze(0)
         return action
     
-
+    def get_guided_action(self, policy: BasePolicy, observaton=None) -> bool: # by tianxing chen
+        device, dtype = policy.device, policy.dtype
+        if observaton is not None:
+            self.obs.append(observaton)  # update
+        obs = self.get_n_steps_obs()
+        
+        # create obs dict
+        np_obs_dict = dict(obs)
+        # device transfer
+        obs_dict = dict_apply(np_obs_dict, lambda x: torch.from_numpy(x).to(device=device))
+        # run policy
+        with torch.no_grad():
+            obs_dict_input = {}  # flush unused keys
+            obs_dict_input['point_cloud'] = obs_dict['point_cloud'].unsqueeze(0)
+            obs_dict_input['head_cam'] = obs_dict['head_cam'].unsqueeze(0)
+            obs_dict_input['agent_pos'] = obs_dict['agent_pos'].unsqueeze(0)
+            obs_dict_input['task_name'] = [self.task_name]
+            action_dict = policy.predict_action_dyn_guided(obs_dict_input)
+            
+        # device_transfer
+        np_action_dict = dict_apply(action_dict, lambda x: x.detach().to('cpu').numpy())
+        action = np_action_dict['action'].squeeze(0)
+        return action
+    
     def run(self, policy: BasePolicy):
         pass
 

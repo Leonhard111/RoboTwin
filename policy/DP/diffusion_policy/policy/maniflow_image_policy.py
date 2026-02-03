@@ -1,4 +1,5 @@
 from typing import Dict, Tuple
+import hydra
 import torch
 import torch.nn.functional as F
 from einops import reduce
@@ -122,6 +123,269 @@ class ManiFlowTransformerImagePolicy(BasePolicy):
 
         print_params(self)
         
+    # ========= planner initialization & dynamic guidance  ==========
+    def initialize_planner(self,
+                           planner_target,
+                           demo_dataset_config,
+                           dynamics_model_ckpt,
+                           action_step,
+                           output_dir,
+                           guidance_start_timestep,
+                           guidance_scale,
+                           threshold,
+                           demo_dataset_path=None
+                           ):
+        """Initialize planner used for classifier-like guidance during ODE sampling.
+        Mirrors the interface used in DiffusionUnetHybridImagePolicy.
+        """
+        planner_cls = hydra.utils.get_class(planner_target)
+        self.planner = planner_cls(demo_dataset_config, dynamics_model_ckpt, action_step, output_dir, demo_dataset_path)
+        self.guidance_start_timestep = guidance_start_timestep
+        self.guidance_scale = guidance_scale
+        self.planner.set_policy_action_normalizer(self.normalizer['action'])
+        self.threshold = threshold
+        self.correct_num = 0
+
+    def guided_conditional_sample(self, 
+            condition_data, 
+            vis_cond=None,
+            lang_cond=None,
+            generator=None,
+            classifier_guidance=False,
+            current_obs=None,
+            text_latents=None,
+            # keyword arguments for sampling
+            **kwargs
+            ):
+        """ODE Euler sampling with optional planner-based guidance.
+        Guidance strategy (heuristic): when guidance is active and the planner deems
+        the current observation 'informative' (score > threshold), we compute
+        the planner loss on the predicted next-step trajectory and apply a
+        gradient-based correction to steer the sample toward higher-scoring
+        regions. The correction is scaled by self.guidance_scale and by the
+        current step size dt to keep magnitudes stable.
+        """
+        model = self.model
+        N = self.num_inference_steps
+
+        # initial noisy trajectory sample
+        trajectory = torch.randn(
+            size=condition_data.shape, 
+            dtype=condition_data.dtype,
+            device=condition_data.device,
+            generator=generator)
+
+        # precompute time grid
+        dt = 1.0 / N
+        t_grid = torch.arange(0, N, device=trajectory.device, dtype=trajectory.dtype) / N
+
+        # if classifier guidance is requested, evaluate current cost once
+        current_cost = None
+        if classifier_guidance and current_obs is not None:
+            # retrive_bef = time.time()
+            current_cost = -1 * self.planner.compute_current_reward(current_obs)
+            # retrive_aft = time.time()
+            current_cost = current_cost.item()
+            print(f"cost scale:{current_cost}")
+            if current_cost >= self.threshold:
+                self.correct_num += 1
+
+        traj = []
+        x = trajectory.detach().clone()
+        traj.append(x.detach().clone())
+
+        for i in range(N):
+            ti = t_grid[i]
+            if self.sample_target_t_mode == "absolute":
+                target_t = ti + dt
+            elif self.sample_target_t_mode == "relative":
+                target_t = dt
+
+            # enable gradient tracking for guidance computation
+            x = x.detach().clone().requires_grad_(True)
+
+            pred = model(x, ti, target_t=target_t, vis_cond=vis_cond, lang_cond=lang_cond)
+            x_next = x + pred * (1 - ti)
+
+            # apply planner gradient-based guidance if enabled and within start timestep
+            # if classifier_guidance and (N - 1 - i < self.guidance_start_timestep) and (current_cost is not None) and (current_cost > self.threshold):
+            if classifier_guidance and (i < self.guidance_start_timestep) and (current_cost is not None) and (current_cost > self.threshold):
+                # compute planner loss on the predicted next-step trajectory
+                loss = self.planner.compute_loss(x_next, current_obs)
+                cond_grad = -torch.autograd.grad(loss, x_next)[0]
+                # scale guidance by configured guidance_scale and dt for stability
+                grad_scale = self.guidance_scale
+                
+                # 2. 计算模长以便调试
+                guidance_term = grad_scale * cond_grad
+                original_term = pred * dt                
+                guidance_norm = torch.linalg.norm(guidance_term.reshape(guidance_term.shape[0], -1), dim=1).mean().item()
+                original_norm = torch.linalg.norm(original_term.reshape(original_term.shape[0], -1), dim=1).mean().item()
+                ratio = guidance_norm / (original_norm + 1e-6)
+                print(f"Step {i} | t={ti:.2f} | Loss: {loss.item():.4f} | G_Norm: {guidance_norm:.4f} | Org_Norm: {original_norm:.4f} | Ratio: {ratio:.4f}")
+
+                x = x.detach().clone() + pred * dt + grad_scale * cond_grad * dt
+                # x = x.detach().clone()  + grad_scale * cond_grad
+                # pred = model(x, ti, target_t=target_t, vis_cond=vis_cond, lang_cond=lang_cond)
+                # x = x.detach().clone() + pred * dt
+            else:
+                x = x.detach().clone() + pred * dt
+
+        # return last sample in trajectory (same convention as conditional_sample)
+        return x
+
+
+    # def guided_conditional_sample(self, 
+    #         condition_data, 
+    #         vis_cond=None,
+    #         lang_cond=None,
+    #         generator=None,
+    #         classifier_guidance=False,
+    #         current_obs=None,
+    #         text_latents=None,
+    #         # keyword arguments for sampling
+    #         **kwargs
+    #         ):
+    #     """ODE Euler sampling with optional planner-based guidance.
+    #     Now implements Rejection Sampling (Best-of-N) when classifier_guidance is True.
+    #     """
+    #     model = self.model
+    #     N = self.num_inference_steps
+        
+    #     # --- Rejection Sampling Setup ---
+    #     if classifier_guidance:
+    #         # Number of candidates to sample (default to 10 if not provided)
+    #         # You can pass num_candidates in kwargs
+    #         num_candidates = kwargs.get('num_candidates', 10) 
+    #         B = condition_data.shape[0]
+            
+    #         # Expand inputs: (B, ...) -> (B*K, ...)
+    #         condition_data = condition_data.repeat_interleave(num_candidates, dim=0)
+            
+    #         if vis_cond is not None:
+    #             vis_cond = vis_cond.repeat_interleave(num_candidates, dim=0)
+                
+    #         if lang_cond is not None:
+    #             lang_cond = lang_cond.repeat_interleave(num_candidates, dim=0)
+            
+    #         if current_obs is not None:
+    #             current_obs = dict_apply(current_obs, lambda x: x.repeat_interleave(num_candidates, dim=0))
+
+    #     # initial noisy trajectory sample
+    #     trajectory = torch.randn(
+    #         size=condition_data.shape, 
+    #         dtype=condition_data.dtype,
+    #         device=condition_data.device,
+    #         generator=generator)
+
+    #     # precompute time grid
+    #     dt = 1.0 / N
+    #     t_grid = torch.arange(0, N, device=trajectory.device, dtype=trajectory.dtype) / N
+
+    #     x = trajectory.detach().clone()
+
+    #     # Standard ODE Sampling Loop
+    #     for i in range(N):
+    #         ti = t_grid[i]
+    #         if self.sample_target_t_mode == "absolute":
+    #             target_t = ti + dt
+    #         elif self.sample_target_t_mode == "relative":
+    #             target_t = dt
+            
+    #         # Predict velocity/next step (No gradients needed for rejection sampling)
+    #         with torch.no_grad():
+    #             pred = model(x, ti, target_t=target_t, vis_cond=vis_cond, lang_cond=lang_cond)
+    #             x = x + pred * dt
+
+    #     # --- Rejection Sampling Selection ---
+    #     if classifier_guidance:
+    #         # x is shape (B*K, T, Da)
+    #         # Calculate Planner Loss for each candidate
+    #         scores = []
+            
+    #         # Iterate to get per-sample loss safely
+    #         for k in range(x.shape[0]):
+    #             this_x = x[k:k+1]
+    #             this_obs = dict_apply(current_obs, lambda v: v[k:k+1])
+    #             with torch.no_grad():
+    #                 # Planner loss (lower is better)
+    #                 loss = self.planner.compute_loss(this_x, this_obs)
+    #                 scores.append(loss.item())
+            
+    #         scores = torch.tensor(scores, device=x.device).reshape(B, num_candidates)
+            
+    #         # Select best candidate (min loss) per batch item
+    #         best_indices = torch.argmin(scores, dim=1) # (B,)
+            
+    #         # Gather best trajectories
+    #         x_reshaped = x.reshape(B, num_candidates, *x.shape[1:])
+    #         final_actions = []
+    #         for b_idx in range(B):
+    #             best_k = best_indices[b_idx]
+    #             final_actions.append(x_reshaped[b_idx, best_k])
+            
+    #         x = torch.stack(final_actions, dim=0)
+
+    #     return x
+
+    def predict_action_dyn_guided(self, obs_dict: Dict[str, torch.Tensor], language_goal=None) -> Dict[str, torch.Tensor]:
+        """Predict action with dynamic planner guidance applied during sampling."""
+        assert 'past_action' not in obs_dict # not implemented yet
+
+        # language conditioning (if applicable)
+        text_latents = None
+        if language_goal is not None and self.language_conditioned:
+            # expecting tokenization externally if needed - keep interface minimal
+            # user can precompute language latents and pass via kwargs if necessary
+            raise RuntimeError("Language-guided dynamic sampling not implemented for ManiFlowTransformerImagePolicy; pass text latents via kwargs instead.")
+
+        nobs = self.normalizer.normalize(obs_dict)
+        value = next(iter(nobs.values()))
+        B, To = value.shape[:2]
+        T = self.horizon
+        Da = self.action_dim
+        Do = self.obs_feature_dim
+        To = self.n_obs_steps
+
+        # build input
+        device = self.device
+        dtype = self.dtype
+
+        # handle observation -> visual condition
+        this_nobs = dict_apply(nobs, lambda x: x[:,:To,...].reshape(-1, *x.shape[2:]).to(device))
+        nobs_features = self.obs_encoder(this_nobs)
+        nobs_features = nobs_features.reshape(B, -1)
+        vis_cond = nobs_features.unsqueeze(1) # B, 1, Do
+
+        # empty data for action
+        cond_data = torch.zeros(size=(B, T, Da), device=device, dtype=dtype)
+
+        # run sampling with guidance
+        nsample = self.guided_conditional_sample(
+            cond_data, 
+            vis_cond=vis_cond,
+            lang_cond=None,
+            classifier_guidance=True,
+            current_obs=dict_apply(obs_dict, lambda x: x[:, -1:, ...]),
+            **self.kwargs)
+
+        # unnormalize prediction
+        naction_pred = nsample[...,:Da]
+        action_pred = self.normalizer['action'].unnormalize(naction_pred)
+
+        # get action
+        start = To - 1
+        end = start + self.n_action_steps
+        action = action_pred[:,start:end]
+        
+        result = {
+            'action': action,
+            'action_pred': action_pred
+        }
+        return result
+        
+
+
     # ========= inference  ============
     def conditional_sample(self, 
             condition_data, 

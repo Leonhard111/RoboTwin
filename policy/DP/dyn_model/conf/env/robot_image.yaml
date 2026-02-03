@@ -4,8 +4,8 @@ dataset_class: dyn_model.datasets.robot_image_dset.RobotImageDynamicsModelDatase
 
 # Dataset paths
 # Based on process_data.py logic: data/{task_name}-{task_config}-{num}.zarr
-train_data_path: /home/ubuntu/fjh/workbench/RoboTwin/policy/DP/data/beat_block_hammer-default-50.zarr
-val_data_path: /home/ubuntu/fjh/workbench/RoboTwin/policy/DP/data/beat_block_hammer-default-50.zarr
+train_data_path: /home/ubuntu/fjh/workbench/RoboTwin/policy/DP/data/beat_block_hammer-demo_clean-50.zarr
+val_data_path: /home/ubuntu/fjh/workbench/RoboTwin/policy/DP/data/beat_block_hammer-demo_clean-50.zarr
 
 # Dataset parameters
 # Key names must match process_data.py: "head_camera"
@@ -20,7 +20,7 @@ proprio_dim: 14
 
 # Image dimensions
 # From default_task_14.yaml: image_shape [3, 224, 224]
-original_img_size: 224
+original_img_size: [240, 320]
 cropped_img_size: 224  # Set to same if no random crop is desired during dyna training
 
 # Model embeddings
@@ -28,7 +28,7 @@ action_emb_dim: 256
 proprio_emb_dim: 32
 
 # Policy checkpoint
-policy_ckpt_path: null
+policy_ckpt_path: /home/ubuntu/fjh/workbench/RoboTwin/policy/DP/data/outputs/beat_block_hammer-maniflow_image_timm_policy_robotwin2-1001_seed0/checkpoints/epoch=0500-val_loss=0.021774.ckpt
 
 # Shape meta for observations
 shape_obs:

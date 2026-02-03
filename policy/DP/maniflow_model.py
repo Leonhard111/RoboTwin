@@ -94,6 +94,41 @@ class ManiFlow:
         
         return raw_action
 
+    def get_guided_action(self, observation=None):
+        # Only query the policy at specified intervals (matching ACT logic)
+        if self.t % self.query_frequency == 0:
+            self.all_actions = self.env_runner.get_guided_action(self.policy, observation)
+            
+            # Convert numpy array to torch tensor with correct shape [action_length, action_dim]
+            self.all_actions = torch.from_numpy(self.all_actions).to(self.device)
+        
+        if self.temporal_agg:
+            # Match temporal aggregation exactly from imitate_episodes.py
+            # self.all_actions has shape [action_length, action_dim]
+            self.all_time_actions[self.t, self.t:self.t + self.num_queries] = self.all_actions
+            actions_for_curr_step = self.all_time_actions[:, self.t]
+            actions_populated = torch.all(actions_for_curr_step != 0, dim=1)
+            actions_for_curr_step = actions_for_curr_step[actions_populated]
+
+            # Use same weighting factor as in imitate_episodes.py
+            k = 0.01
+            exp_weights = np.exp(-k * np.arange(len(actions_for_curr_step)))
+            exp_weights = exp_weights / exp_weights.sum()
+            exp_weights = torch.from_numpy(exp_weights).to(self.device).unsqueeze(dim=1)
+
+            raw_action = torch.sum(actions_for_curr_step * exp_weights, dim=0, keepdim=True)
+        else:
+            # Direct action selection, same as imitate_episodes.py
+            # raw_action = self.all_actions[self.t % self.query_frequency].unsqueeze(0)
+            raw_action = self.all_actions
+        
+        self.t += 1  # Increment timestep
+
+        raw_action = raw_action.detach().cpu().numpy()
+        
+        return raw_action
+
+
     def get_policy_and_runner(self, cfg, usr_args, run_dir):
         workspace = TrainManiFlowRoboTwinWorkspace(cfg, output_dir=run_dir)
         policy, env_runner, epoch = workspace.get_policy_and_runner(cfg, usr_args, mode='latest')

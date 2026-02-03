@@ -121,8 +121,8 @@ class Trainer:
             'num_pred': self.cfg.num_pred,
             'frameskip': self.cfg.frameskip,
             'view_names': self.cfg.env.view_names,
-            'abs_action': self.cfg.abs_action,
-            'use_crop': self.cfg.use_crop,
+            # 'abs_action': self.cfg.abs_action,
+            # 'use_crop': self.cfg.use_crop,
             'original_img_size': self.cfg.env.original_img_size,
             'cropped_img_size': self.cfg.env.cropped_img_size,
             'action_dim': self.cfg.env.action_dim,
@@ -501,7 +501,7 @@ class Trainer:
             obs, act, state = data
             for view_name in self.cfg.env.view_names:
                 obs['visual'][view_name] = self.normalizer[view_name].normalize(obs['visual'][view_name])
-                obs['visual'][view_name] = self.valid_img_transform(obs['visual'][view_name].view(-1, 3, self.original_img_size, self.original_img_size))
+                obs['visual'][view_name] = torch.stack([self.valid_img_transform(img) for img in obs['visual'][view_name]])
                 obs['visual'][view_name] = obs['visual'][view_name].view(-1, self.cfg.num_hist+self.cfg.num_pred, 3, self.cropped_image_size, self.cropped_image_size)
 
             obs['proprio'] = self.normalizer['state'].normalize(obs['proprio'])

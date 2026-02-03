@@ -1,0 +1,38 @@
+# Basic experiment configuration (keep unchanged)
+policy_name: null
+task_name: null
+task_config: null
+ckpt_setting: null
+seed: null
+instruction_type: unseen
+
+# Add Parameters You Need
+config_name: robot_maniflow
+checkpoint_num: 1000
+maniflow_task: demo_task
+expert_data_num: null
+
+
+dynamics_model_checkpoint: 'policy/DP/data/outputs/2026.02.02/07.53.41_robot_image/checkpoints/model_200.pth'
+policy_checkpoint: 'data/outputs/beat_block_hammer-maniflow_image_timm_policy_robotwin2-1001_seed0/checkpoints/epoch=0500-val_loss=0.021774.ckpt'
+guidance_start_timestep: 10
+guidance_scale: 0.2
+
+threshold: 2.8
+n_test: 50
+test_start_seed: 100000
+n_action_steps: 15
+
+output_dir: 'data/release_hammer_beat_test'
+
+device: "cuda"
+
+# Environment runner configuration
+# env_runner_target: 'diffusion_policy.env_runner.robomimic_image_sequential_runner.SequentialRobomimicImageRunner'
+
+# Planner configuration
+planner_target: 'dyn_model.planner_robot.RobotPlanner'
+
+# Demo dataset path
+demo_dataset_path: 'policy/DP/data/beat_block_hammer-demo_clean-50.zarr'
+
