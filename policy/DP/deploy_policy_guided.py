@@ -143,7 +143,7 @@ def eval_guided(TASK_ENV, model, observation):
         model.update_obs(obs)
 
     start_time = time.time()
-    actions = model.get_action()  # Get Action according to observation chunk
+    actions = model.get_guided_action()  # Get Action according to observation chunk
     end_time = time.time()
     latency = (end_time - start_time) * 1000  # 转换为毫秒
     print(f"***********推理延迟: {latency:.2f} ms***********")

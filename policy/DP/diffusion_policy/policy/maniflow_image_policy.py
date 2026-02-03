@@ -235,98 +235,7 @@ class ManiFlowTransformerImagePolicy(BasePolicy):
         return x
 
 
-    # def guided_conditional_sample(self, 
-    #         condition_data, 
-    #         vis_cond=None,
-    #         lang_cond=None,
-    #         generator=None,
-    #         classifier_guidance=False,
-    #         current_obs=None,
-    #         text_latents=None,
-    #         # keyword arguments for sampling
-    #         **kwargs
-    #         ):
-    #     """ODE Euler sampling with optional planner-based guidance.
-    #     Now implements Rejection Sampling (Best-of-N) when classifier_guidance is True.
-    #     """
-    #     model = self.model
-    #     N = self.num_inference_steps
-        
-    #     # --- Rejection Sampling Setup ---
-    #     if classifier_guidance:
-    #         # Number of candidates to sample (default to 10 if not provided)
-    #         # You can pass num_candidates in kwargs
-    #         num_candidates = kwargs.get('num_candidates', 10) 
-    #         B = condition_data.shape[0]
-            
-    #         # Expand inputs: (B, ...) -> (B*K, ...)
-    #         condition_data = condition_data.repeat_interleave(num_candidates, dim=0)
-            
-    #         if vis_cond is not None:
-    #             vis_cond = vis_cond.repeat_interleave(num_candidates, dim=0)
-                
-    #         if lang_cond is not None:
-    #             lang_cond = lang_cond.repeat_interleave(num_candidates, dim=0)
-            
-    #         if current_obs is not None:
-    #             current_obs = dict_apply(current_obs, lambda x: x.repeat_interleave(num_candidates, dim=0))
 
-    #     # initial noisy trajectory sample
-    #     trajectory = torch.randn(
-    #         size=condition_data.shape, 
-    #         dtype=condition_data.dtype,
-    #         device=condition_data.device,
-    #         generator=generator)
-
-    #     # precompute time grid
-    #     dt = 1.0 / N
-    #     t_grid = torch.arange(0, N, device=trajectory.device, dtype=trajectory.dtype) / N
-
-    #     x = trajectory.detach().clone()
-
-    #     # Standard ODE Sampling Loop
-    #     for i in range(N):
-    #         ti = t_grid[i]
-    #         if self.sample_target_t_mode == "absolute":
-    #             target_t = ti + dt
-    #         elif self.sample_target_t_mode == "relative":
-    #             target_t = dt
-            
-    #         # Predict velocity/next step (No gradients needed for rejection sampling)
-    #         with torch.no_grad():
-    #             pred = model(x, ti, target_t=target_t, vis_cond=vis_cond, lang_cond=lang_cond)
-    #             x = x + pred * dt
-
-    #     # --- Rejection Sampling Selection ---
-    #     if classifier_guidance:
-    #         # x is shape (B*K, T, Da)
-    #         # Calculate Planner Loss for each candidate
-    #         scores = []
-            
-    #         # Iterate to get per-sample loss safely
-    #         for k in range(x.shape[0]):
-    #             this_x = x[k:k+1]
-    #             this_obs = dict_apply(current_obs, lambda v: v[k:k+1])
-    #             with torch.no_grad():
-    #                 # Planner loss (lower is better)
-    #                 loss = self.planner.compute_loss(this_x, this_obs)
-    #                 scores.append(loss.item())
-            
-    #         scores = torch.tensor(scores, device=x.device).reshape(B, num_candidates)
-            
-    #         # Select best candidate (min loss) per batch item
-    #         best_indices = torch.argmin(scores, dim=1) # (B,)
-            
-    #         # Gather best trajectories
-    #         x_reshaped = x.reshape(B, num_candidates, *x.shape[1:])
-    #         final_actions = []
-    #         for b_idx in range(B):
-    #             best_k = best_indices[b_idx]
-    #             final_actions.append(x_reshaped[b_idx, best_k])
-            
-    #         x = torch.stack(final_actions, dim=0)
-
-    #     return x
 
     def predict_action_dyn_guided(self, obs_dict: Dict[str, torch.Tensor], language_goal=None) -> Dict[str, torch.Tensor]:
         """Predict action with dynamic planner guidance applied during sampling."""
@@ -340,6 +249,9 @@ class ManiFlowTransformerImagePolicy(BasePolicy):
             raise RuntimeError("Language-guided dynamic sampling not implemented for ManiFlowTransformerImagePolicy; pass text latents via kwargs instead.")
 
         nobs = self.normalizer.normalize(obs_dict)
+        # del nobs['point_cloud']
+        # del nobs['task_name']
+        print({k: (type(v), getattr(v, 'shape', None)) for k, v in nobs.items()})        
         value = next(iter(nobs.values()))
         B, To = value.shape[:2]
         T = self.horizon
@@ -352,11 +264,10 @@ class ManiFlowTransformerImagePolicy(BasePolicy):
         dtype = self.dtype
 
         # handle observation -> visual condition
-        this_nobs = dict_apply(nobs, lambda x: x[:,:To,...].reshape(-1, *x.shape[2:]).to(device))
-        nobs_features = self.obs_encoder(this_nobs)
-        nobs_features = nobs_features.reshape(B, -1)
-        vis_cond = nobs_features.unsqueeze(1) # B, 1, Do
-
+        this_nobs = dict_apply(nobs, lambda x: x[:,:To,...].to(device))
+        nobs_features = self.obs_encoder(this_nobs).to(device) 
+        vis_cond = nobs_features.reshape(B, -1, Do) # B, self.n_obs_steps*L, Do
+        print(f"vis_conda.shape:{vis_cond.shape}")
         # empty data for action
         cond_data = torch.zeros(size=(B, T, Da), device=device, dtype=dtype)
 
