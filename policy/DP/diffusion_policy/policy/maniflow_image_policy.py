@@ -145,6 +145,7 @@ class ManiFlowTransformerImagePolicy(BasePolicy):
         self.planner.set_policy_action_normalizer(self.normalizer['action'])
         self.threshold = threshold
         self.correct_num = 0
+        self.cost_history = []  # 记录每次 guided_conditional_sample 的 current_cost，用于绘制轨迹曲线
 
     def guided_conditional_sample(self, 
             condition_data, 
@@ -189,6 +190,7 @@ class ManiFlowTransformerImagePolicy(BasePolicy):
             print(f"cost scale:{current_cost}")
             if current_cost >= self.threshold:
                 self.correct_num += 1
+            self.cost_history.append(current_cost)  # 记录本次推理的 cost
 
         traj = []
         x = trajectory.detach().clone()
@@ -209,7 +211,7 @@ class ManiFlowTransformerImagePolicy(BasePolicy):
 
             # apply planner gradient-based guidance if enabled and within start timestep
             # if classifier_guidance and (N - 1 - i < self.guidance_start_timestep) and (current_cost is not None) and (current_cost > self.threshold):
-            if classifier_guidance and (i < self.guidance_start_timestep) and (current_cost is not None) and (current_cost > self.threshold):
+            if classifier_guidance and (i >= self.guidance_start_timestep - 1) and (current_cost is not None) and (current_cost > self.threshold):
                 # compute planner loss on the predicted next-step trajectory
                 loss = self.planner.compute_loss(x_next, current_obs)
                 cond_grad = -torch.autograd.grad(loss, x_next)[0]
@@ -218,13 +220,17 @@ class ManiFlowTransformerImagePolicy(BasePolicy):
                 
                 # 2. 计算模长以便调试
                 guidance_term = grad_scale * cond_grad
-                original_term = pred * dt                
+                original_term = pred            
                 guidance_norm = torch.linalg.norm(guidance_term.reshape(guidance_term.shape[0], -1), dim=1).mean().item()
                 original_norm = torch.linalg.norm(original_term.reshape(original_term.shape[0], -1), dim=1).mean().item()
                 ratio = guidance_norm / (original_norm + 1e-6)
                 print(f"Step {i} | t={ti:.2f} | Loss: {loss.item():.4f} | G_Norm: {guidance_norm:.4f} | Org_Norm: {original_norm:.4f} | Ratio: {ratio:.4f}")
-
-                x = x.detach().clone() + pred * dt + grad_scale * cond_grad * dt
+                if ratio < 0.1 :
+                    x = x.detach().clone() + pred * dt + grad_scale * cond_grad * dt
+                else :
+                    x = x.detach().clone() + (pred * dt + grad_scale * cond_grad * dt/ratio)/(math.sqrt(1 + grad_scale * grad_scale))
+                # x = x.detach().clone() + (pred * dt + grad_scale * cond_grad * dt/ratio)/(math.sqrt(1 + grad_scale * grad_scale))
+                # x = x.detach().clone() + pred * dt + grad_scale * cond_grad * dt
                 # x = x.detach().clone()  + grad_scale * cond_grad
                 # pred = model(x, ti, target_t=target_t, vis_cond=vis_cond, lang_cond=lang_cond)
                 # x = x.detach().clone() + pred * dt
@@ -233,6 +239,108 @@ class ManiFlowTransformerImagePolicy(BasePolicy):
 
         # return last sample in trajectory (same convention as conditional_sample)
         return x
+
+
+
+    def sample_guided_conditional_sample(self, 
+            condition_data, 
+            vis_cond=None,
+            lang_cond=None,
+            generator=None,
+            classifier_guidance=False,
+            current_obs=None,
+            text_latents=None,
+            # keyword arguments for sampling
+            **kwargs
+            ):
+        """ODE Euler sampling with optional planner-based guidance.
+        Guidance strategy (heuristic): when guidance is active and the planner deems
+        the current observation 'informative' (score > threshold), we compute
+        the planner loss on the predicted next-step trajectory and apply a
+        gradient-based correction to steer the sample toward higher-scoring
+        regions. The correction is scaled by self.guidance_scale and by the
+        current step size dt to keep magnitudes stable.
+        """
+        model = self.model
+        N = self.num_inference_steps
+        num_candidates = 2
+        # if classifier guidance is requested, evaluate current cost once
+        current_cost = None
+        if classifier_guidance and current_obs is not None:
+            # retrive_bef = time.time()
+            current_cost = -1 * self.planner.compute_current_reward(current_obs)
+            # retrive_aft = time.time()
+            current_cost = current_cost.item()
+            print(f"cost scale:{current_cost}")
+            if current_cost >= self.threshold:
+                self.correct_num += 1
+            self.cost_history.append(current_cost)  # 记录本次推理的 cost
+
+        
+        if classifier_guidance and (current_cost is not None) and (current_cost > self.threshold):
+            # generate 2 candidate trajectories and pick the one with smaller planner loss
+            B_orig, T, Da = condition_data.shape
+            # num_candidates = 2
+            trajectory = torch.randn(
+                size=(num_candidates, T, Da), 
+                dtype=condition_data.dtype,
+                device=condition_data.device,
+                generator=generator)
+
+            # precompute time grid
+            dt = 1.0 / N
+            t_grid = torch.arange(0, N, device=trajectory.device, dtype=trajectory.dtype) / N
+            x = trajectory.detach().clone()
+
+            # expand vis_cond / lang_cond to match num_candidates
+            vis_cond_expanded = vis_cond.expand(num_candidates, -1, -1) if vis_cond is not None else None
+            lang_cond_expanded = lang_cond.expand(num_candidates, -1) if lang_cond is not None else None
+
+            for i in range(N):
+                ti = t_grid[i]
+                if self.sample_target_t_mode == "absolute":
+                    target_t = ti + dt
+                elif self.sample_target_t_mode == "relative":
+                    target_t = dt
+                pred = model(x, ti, target_t=target_t, vis_cond=vis_cond_expanded, lang_cond=lang_cond_expanded)
+                x = x.detach().clone() + pred * dt
+
+            # select candidate with smaller planner loss
+            candidate_losses = []
+            with torch.no_grad():
+                for ci in range(num_candidates):
+                    loss_i = self.planner.compute_loss(x[ci:ci+1], current_obs).item()
+                    candidate_losses.append(loss_i)
+            best_idx = candidate_losses.index(min(candidate_losses))
+            print(f"[sample_guided] candidate losses: {candidate_losses}, best_idx: {best_idx}")
+            x = x[best_idx:best_idx+1]  # shape: (1, T, Da)
+
+        else:
+            trajectory = torch.randn(
+                size=condition_data.shape, 
+                dtype=condition_data.dtype,
+                device=condition_data.device,
+                generator=generator)
+            # precompute time grid
+            dt = 1.0 / N
+            t_grid = torch.arange(0, N, device=trajectory.device, dtype=trajectory.dtype) / N
+            x = trajectory.detach().clone()
+            
+            for i in range(N):
+                ti = t_grid[i]
+                if self.sample_target_t_mode == "absolute":
+                    target_t = ti + dt
+                elif self.sample_target_t_mode == "relative":
+                    target_t = dt
+                pred = model(x, ti, target_t=target_t, vis_cond=vis_cond, lang_cond=lang_cond)
+                x = x.detach().clone() + pred * dt
+            
+
+        # return last sample in trajectory (same convention as conditional_sample)
+        return x
+
+
+
 
 
 
@@ -251,7 +359,7 @@ class ManiFlowTransformerImagePolicy(BasePolicy):
         nobs = self.normalizer.normalize(obs_dict)
         # del nobs['point_cloud']
         # del nobs['task_name']
-        print({k: (type(v), getattr(v, 'shape', None)) for k, v in nobs.items()})        
+        #print({k: (type(v), getattr(v, 'shape', None)) for k, v in nobs.items()})        
         value = next(iter(nobs.values()))
         B, To = value.shape[:2]
         T = self.horizon
@@ -267,7 +375,7 @@ class ManiFlowTransformerImagePolicy(BasePolicy):
         this_nobs = dict_apply(nobs, lambda x: x[:,:To,...].to(device))
         nobs_features = self.obs_encoder(this_nobs).to(device) 
         vis_cond = nobs_features.reshape(B, -1, Do) # B, self.n_obs_steps*L, Do
-        print(f"vis_conda.shape:{vis_cond.shape}")
+        #print(f"vis_conda.shape:{vis_cond.shape}")
         # empty data for action
         cond_data = torch.zeros(size=(B, T, Da), device=device, dtype=dtype)
 
@@ -295,6 +403,68 @@ class ManiFlowTransformerImagePolicy(BasePolicy):
         }
         return result
         
+
+
+    def predict_action_sample_dyn_guided(self, obs_dict: Dict[str, torch.Tensor], language_goal=None) -> Dict[str, torch.Tensor]:
+        """Predict action with dynamic planner guidance applied during sampling."""
+        assert 'past_action' not in obs_dict # not implemented yet
+
+        # language conditioning (if applicable)
+        text_latents = None
+        if language_goal is not None and self.language_conditioned:
+            # expecting tokenization externally if needed - keep interface minimal
+            # user can precompute language latents and pass via kwargs if necessary
+            raise RuntimeError("Language-guided dynamic sampling not implemented for ManiFlowTransformerImagePolicy; pass text latents via kwargs instead.")
+
+        nobs = self.normalizer.normalize(obs_dict)
+        # del nobs['point_cloud']
+        # del nobs['task_name']
+        #print({k: (type(v), getattr(v, 'shape', None)) for k, v in nobs.items()})        
+        value = next(iter(nobs.values()))
+        B, To = value.shape[:2]
+        T = self.horizon
+        Da = self.action_dim
+        Do = self.obs_feature_dim
+        To = self.n_obs_steps
+
+        # build input
+        device = self.device
+        dtype = self.dtype
+
+        # handle observation -> visual condition
+        this_nobs = dict_apply(nobs, lambda x: x[:,:To,...].to(device))
+        nobs_features = self.obs_encoder(this_nobs).to(device) 
+        vis_cond = nobs_features.reshape(B, -1, Do) # B, self.n_obs_steps*L, Do
+        #print(f"vis_conda.shape:{vis_cond.shape}")
+        # empty data for action
+        cond_data = torch.zeros(size=(B, T, Da), device=device, dtype=dtype)
+
+        # run sampling with guidance
+        nsample = self.sample_guided_conditional_sample(
+            cond_data, 
+            vis_cond=vis_cond,
+            lang_cond=None,
+            classifier_guidance=True,
+            current_obs=dict_apply(obs_dict, lambda x: x[:, -1:, ...]),
+            **self.kwargs)
+
+        # unnormalize prediction
+        naction_pred = nsample[...,:Da]
+        action_pred = self.normalizer['action'].unnormalize(naction_pred)
+
+        # get action
+        start = To - 1
+        end = start + self.n_action_steps
+        action = action_pred[:,start:end]
+        
+        result = {
+            'action': action,
+            'action_pred': action_pred
+        }
+        return result
+        
+
+
 
 
     # ========= inference  ============

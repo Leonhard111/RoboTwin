@@ -300,9 +300,9 @@ class RobotPlanner:
             self.img_transform = get_eval_crop_transform_resnet(original_img_size=[240, 320], 
                                                         cropped_img_size=self.cropped_img_size)
             v = self.img_transform(v.view(-1, 3, 240, 320))
-            print(f"v.shape:{v.shape}")
+            # print(f"v.shape:{v.shape}")
             v = v.view(-1, 1, 3, self.cropped_img_size, self.cropped_img_size)
-            print(f"v.shape:{v.shape}")
+            # print(f"v.shape:{v.shape}")
             visual[view_name] = v
 
         current_obs_wm = {'visual': visual, 'proprio': proprio}

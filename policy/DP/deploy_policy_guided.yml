@@ -12,11 +12,11 @@ checkpoint_num: 1000
 maniflow_task: demo_task
 expert_data_num: null
 
+# policy/DP/data/outputs/2026.02.27/06.36.33_robot_image/checkpoints/model_200.pth
 
-dynamics_model_checkpoint: 'policy/DP/data/outputs/2026.02.02/07.53.41_robot_image/checkpoints/model_200.pth'
-policy_checkpoint: 'data/outputs/beat_block_hammer-maniflow_image_timm_policy_robotwin2-1001_seed0/checkpoints/epoch=0500-val_loss=0.021774.ckpt'
-guidance_start_timestep: 10
-guidance_scale: 0.2
+guidance_start_timestep: 9 # 9 # 现在是末尾引导，即第k个及以后有引导效果
+num_inference_steps: 10
+guidance_scale: 0.2 # 0.2
 
 threshold: 2.8
 n_test: 50
@@ -34,5 +34,8 @@ device: "cuda"
 planner_target: 'dyn_model.planner_robot.RobotPlanner'
 
 # Demo dataset path
-demo_dataset_path: 'policy/DP/data/beat_block_hammer-demo_clean-50.zarr'
-
+#dynamics_model_checkpoint: 'policy/DP/data/outputs/2026.02.27/09.29.15_robot_image/checkpoints/model_200_handover_block.pth'
+dynamics_model_checkpoint: 'policy/DP/data/outputs/2026.02.27/09.29.15_robot_image/checkpoints/model_200_handover_block.pth'
+policy_checkpoint: 'data/outputs/handover_block-maniflow_image_timm_policy_robotwin2-1001_seed0/checkpoints/latest.ckpt'
+demo_dataset_path: 'policy/DP/data/handover_block-demo_clean-50.zarr'
+#dynamics_model_checkpoint: 'policy/DP/data/outputs/2026.02.27/09.29.15_robot_image/checkpoints/model_200_handover_block.pth'

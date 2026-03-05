@@ -1,3 +1,4 @@
+# 没用
 #  bash ./scripts/eval_guided.sh  3
 gpu_id=${1}
 export PYTHONPATH="$(pwd)":$PYTHONPATH

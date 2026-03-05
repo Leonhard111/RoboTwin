@@ -1,7 +1,7 @@
 # config.yaml
 
 dynamics_model_checkpoint: 'data/outputs/2026.02.02/07.53.41_robot_image/checkpoints/model_200.pth'
-policy_checkpoint: 'data/outputs/beat_block_hammer-maniflow_image_timm_policy_robotwin2-1001_seed0/checkpoints/epoch=0500-val_loss=0.021774.ckpt'
+policy_checkpoint: 'data/outputs/move_pillbottle_pad-maniflow_image_timm_policy_robotwin2-1001_seed0/checkpoints/latest.ckpt'
 guidance_start_timestep: 10
 guidance_scale: 0.2
 
@@ -21,5 +21,5 @@ env_runner_target: 'diffusion_policy.env_runner.robomimic_image_sequential_runne
 planner_target: 'dyn_model.planner_robot.RobotPlanner'
 
 # Demo dataset path
-demo_dataset_path: 'data/beat_block_hammer-demo_clean-50.zarr'
+demo_dataset_path: 'data/move_pillbottle_pad-demo_clean-50.zarr'
 

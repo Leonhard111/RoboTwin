@@ -5,7 +5,7 @@
 # bash train_eval_robotwin2.sh lift_pot maniflow_image_timm_policy_robotwin2 demo_randomized 50 1112 0 0
 # bash train_eval_robotwin2.sh lift_pot maniflow_image_transformer_policy_robotwin2 demo_randomized 50 1112 0 0
 # bash eval_guided.sh beat_block_hammer  maniflow_image_timm_policy_robotwin2 demo_clean  50 1001 0 3
-#bash eval_guided.sh handover_block  maniflow_image_timm_policy_robotwin2 demo_clean  50 1001 0 3
+#bash eval_guided_one.sh hanging_mug  maniflow_image_timm_policy_robotwin2 demo_clean  50 1001 0 3 100000
 train=false
 eval=true
 train_task_config=${3} # setting for training, demo_clean or demo_randomized, add here for clarity
@@ -23,6 +23,7 @@ seed=${6}
 gpu_id=${7}
 ckpt_setting=${task_config}
 eval_seed=0 # seed for evaluation, can be changed to 1, 2, etc.
+std_seed=${8}
 
 if [ "$train" = true ]; then
     echo "Training is enabled."
@@ -54,7 +55,7 @@ echo -e "\033[33mgpu id (to use): ${gpu_id}\033[0m"
 cd ../.. # move to root
 
 PYTHONWARNINGS=ignore::UserWarning \
-python script/eval_policy_guided.py --config policy/${policy_name}/deploy_policy_guided.yml \
+python script/eval_policy_guided_one.py --config policy/${policy_name}/deploy_policy_guided.yml \
     --overrides \
     --config_name ${alg_name} \
     --task_name ${task_name} \
@@ -65,6 +66,7 @@ python script/eval_policy_guided.py --config policy/${policy_name}/deploy_policy
     --seed ${eval_seed} \
     --policy_name ${policy_name} \
     --addition_info ${addition_info} \
-    --alg_name ${alg_name}
+    --alg_name ${alg_name} \
+    --std_seed ${std_seed}
 
 echo "Evaluation is enabled."

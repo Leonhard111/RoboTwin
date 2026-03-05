@@ -1,6 +1,5 @@
 import sys
 import os
-import re
 import subprocess
 
 sys.path.append("./")
@@ -24,29 +23,6 @@ from generate_episode_instructions import *
 
 current_file_path = os.path.abspath(__file__)
 parent_directory = os.path.dirname(current_file_path)
-
-
-_ANSI_ESCAPE = re.compile(r'\x1b\[[0-9;]*[a-zA-Z]')
-_STEP_PATTERN = re.compile(r'^step:\s*\d+\s*/\s*\d+\s*$')
-
-class Tee:
-    """同时向终端和文件写入；终端保留 ANSI 颜色，文件写入纯文本。
-    step 行的过滤在评估结束后统一进行（见 main() 末尾的后处理逻辑）。
-    """
-    def __init__(self, term_stream, file_stream):
-        self.term = term_stream
-        self.file = file_stream
-
-    def write(self, data):
-        self.term.write(data)
-        self.term.flush()
-        clean = _ANSI_ESCAPE.sub('', data)
-        self.file.write(clean)
-        self.file.flush()
-
-    def flush(self):
-        self.term.flush()
-        self.file.flush()
 
 
 def class_decorator(task_name):
@@ -148,16 +124,8 @@ def main(usr_args):
     else:
         embodiment_name = str(embodiment_type[0]) + "+" + str(embodiment_type[1])
 
-    # save_dir = Path(f"eval_result/{task_name}/{policy_name} + '.deploy_policy_guided'/{task_config}/{ckpt_setting}/{current_time}")
-    save_dir = Path(f"eval_result/{task_name}/{policy_name}_new_deploy_policy_guided/{task_config}/{ckpt_setting}/{current_time}")
+    save_dir = Path(f"eval_result/{task_name}/{policy_name}_debug_deploy_policy_guided'/{task_config}/{ckpt_setting}/{current_time}")
     save_dir.mkdir(parents=True, exist_ok=True)
-
-    # 启动终端日志镜像：将所有 print 输出同时写入 terminal_log.txt
-    log_file = open(os.path.join(save_dir, "terminal_log.txt"), "w", encoding="utf-8")
-    orig_stdout = sys.stdout
-    orig_stderr = sys.stderr
-    sys.stdout = Tee(orig_stdout, log_file)
-    sys.stderr = Tee(orig_stderr, log_file)
 
     if args["eval_video_log"]:
         video_save_dir = save_dir
@@ -192,16 +160,14 @@ def main(usr_args):
 
     seed = usr_args["seed"]
 
-    st_seed = 100000 * (1 + seed)
+    st_seed = usr_args["std_seed"]  # 100000 * (1 + seed)
     suc_nums = []
-    test_num = 100
+    test_num = 1
     topk = 1
 
     model = get_model(usr_args)
-    model.policy.num_inference_steps = usr_args['num_inference_steps']
-    print("***********")
-    print(f"num_inference_steps: {model.policy.num_inference_steps}")
-    print("***********")
+    model.num_inference_steps = usr_args['num_inference_steps']
+    print(model.num_inference_steps)
     args['save_dir'] = str(save_dir)  # 传入 eval_policy 供 cost_history 保存使用
     st_seed, suc_num, trial_list, trial_seeds = eval_policy(task_name,
                                    TASK_ENV,
@@ -223,7 +189,7 @@ def main(usr_args):
         file.write(f"Instruction Type: {instruction_type}\n\n")
         # log some of the run parameters from args/model
         file.write("Parameters:\n")
-        file.write(f"  num_inference_steps: {model.policy.num_inference_steps}\n")
+        file.write(f"  num_inference_steps: {model.num_inference_steps}\n")
         file.write(f"  guidance_scale: {usr_args.get('guidance_scale')}\n")
         file.write(f"  threshold: {usr_args.get('threshold')}\n")
         file.write(f"  n_action_steps: {usr_args.get('n_action_steps')}\n")
@@ -240,21 +206,7 @@ def main(usr_args):
                 file.write(f"  episode_{idx}: seed={seed}, success={success_flag}\n")
 
     print(f"Data has been saved to {file_path}")
-
-    # 恢复标准流并关闭日志文件
-    sys.stdout = orig_stdout
-    sys.stderr = orig_stderr
-    log_file.close()
-
-    # 后处理：删除日志中所有 step 行
-    log_path = os.path.join(save_dir, "terminal_log.txt")
-    with open(log_path, 'r', encoding='utf-8') as _f:
-        _lines = _f.readlines()
-    _filtered = [l for l in _lines if not _STEP_PATTERN.match(l.strip('\r\n'))]
-    with open(log_path, 'w', encoding='utf-8') as _f:
-        _f.writelines(_filtered)
-
-    print(f"Terminal log saved to {os.path.join(save_dir, 'terminal_log.txt')}")
+    # return task_reward
 
 
 def eval_policy(task_name,
@@ -262,7 +214,7 @@ def eval_policy(task_name,
                 args,
                 model,
                 st_seed,
-                test_num=100,
+                test_num=1,
                 video_size=None,
                 instruction_type=None):
     print(f"\033[34mTask Name: {args['task_name']}\033[0m")
